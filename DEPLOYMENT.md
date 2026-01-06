@@ -68,29 +68,17 @@ wrangler secret put GITHUB_TOKEN
 
 ### Analyzing Different Repositories
 
-Edit `functions/api/ci-data.js` and change the repository owner/name in the fetch URLs:
+Edit `functions/api/ci-data.js` and `functions/api/workflow-runs.js` to change the repository owner/name:
 
 ```javascript
-const REPO_OWNER = 'cloudflare';
-const REPO_NAME = 'workers-sdk';
+// Change this line in both files:
+`https://api.github.com/repos/cloudflare/workers-sdk/actions/runs?per_page=${limit}`
 
-// Update all fetch calls like:
-`https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/actions/workflows/...`
+// To:
+`https://api.github.com/repos/YOUR_OWNER/YOUR_REPO/actions/runs?per_page=${limit}`
 ```
 
-### Changing the Workflow
-
-By default, the dashboard analyzes the "CI" workflow (ID: 15325074). To analyze a different workflow:
-
-1. Find the workflow ID:
-```bash
-curl https://api.github.com/repos/cloudflare/workers-sdk/actions/workflows
-```
-
-2. Update the default in `functions/api/ci-data.js`:
-```javascript
-const workflowId = url.searchParams.get('workflow_id') || 'YOUR_WORKFLOW_ID';
-```
+The dashboard automatically analyzes **all workflows** in the repository, so you don't need to specify individual workflow IDs.
 
 ### Adjusting Cache Duration
 

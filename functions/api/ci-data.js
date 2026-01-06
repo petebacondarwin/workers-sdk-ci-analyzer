@@ -4,11 +4,10 @@ export async function onRequest(context) {
   try {
     const url = new URL(request.url);
     const limit = parseInt(url.searchParams.get('limit') || '50');
-    const workflowId = url.searchParams.get('workflow_id') || '15325074'; // Default to CI workflow
     
-    // Fetch workflow runs from GitHub API
+    // Fetch ALL workflow runs from GitHub API (not just a specific workflow)
     const runsResponse = await fetch(
-      `https://api.github.com/repos/cloudflare/workers-sdk/actions/workflows/${workflowId}/runs?per_page=${limit}&status=completed`,
+      `https://api.github.com/repos/cloudflare/workers-sdk/actions/runs?per_page=${limit}&status=completed`,
       {
         headers: {
           'Accept': 'application/vnd.github+json',

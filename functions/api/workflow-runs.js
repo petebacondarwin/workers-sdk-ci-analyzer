@@ -4,10 +4,10 @@ export async function onRequest(context) {
   try {
     const url = new URL(request.url);
     const limit = parseInt(url.searchParams.get('limit') || '50');
-    const workflowId = url.searchParams.get('workflow_id') || '15325074';
     
+    // Fetch ALL workflow runs across all workflows
     const response = await fetch(
-      `https://api.github.com/repos/cloudflare/workers-sdk/actions/workflows/${workflowId}/runs?per_page=${limit}`,
+      `https://api.github.com/repos/cloudflare/workers-sdk/actions/runs?per_page=${limit}`,
       {
         headers: {
           'Accept': 'application/vnd.github+json',

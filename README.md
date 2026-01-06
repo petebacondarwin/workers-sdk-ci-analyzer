@@ -139,11 +139,17 @@ wrangler deploy
 ### Data Collection
 
 The Worker functions fetch data from the GitHub Actions API:
-1. Retrieve recent workflow runs for the CI workflow
+1. Retrieve recent workflow runs **across ALL workflows** in the repository (not just a specific workflow)
 2. For each run, fetch detailed job information
 3. Analyze job steps to detect retries and failures
 4. Group runs by commit SHA to detect re-run patterns
 5. Calculate durations for each task
+
+This means the dashboard analyzes all CI activity including:
+- Main CI workflow
+- Pull request checks
+- Release workflows
+- Any other GitHub Actions workflows in the repository
 
 ### Flaky Test Detection Methods
 
