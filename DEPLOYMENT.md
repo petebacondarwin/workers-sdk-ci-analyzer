@@ -14,13 +14,15 @@ npm install
 npm run dev
 ```
 
-Visit `http://localhost:8787` to see the dashboard.
+Visit `http://localhost:5173` to see the dashboard. The Vite dev server provides hot module replacement for instant updates.
 
 ### 3. Deploy to Cloudflare Workers
 
 ```bash
 npm run deploy
 ```
+
+This will build your React app and deploy it to Cloudflare Workers.
 
 ## Configuration
 
@@ -66,11 +68,14 @@ wrangler secret put GITHUB_TOKEN
 
 ### Analyzing Different Repositories
 
-Edit `src/index.js` and change the repository owner/name:
+Edit `functions/api/ci-data.js` and change the repository owner/name in the fetch URLs:
 
 ```javascript
 const REPO_OWNER = 'cloudflare';
 const REPO_NAME = 'workers-sdk';
+
+// Update all fetch calls like:
+`https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/actions/workflows/...`
 ```
 
 ### Changing the Workflow
@@ -82,17 +87,55 @@ By default, the dashboard analyzes the "CI" workflow (ID: 15325074). To analyze 
 curl https://api.github.com/repos/cloudflare/workers-sdk/actions/workflows
 ```
 
-2. Update the default in `src/index.js`:
+2. Update the default in `functions/api/ci-data.js`:
 ```javascript
-const workflowId = searchParams.get('workflow_id') || 'YOUR_WORKFLOW_ID';
+const workflowId = url.searchParams.get('workflow_id') || 'YOUR_WORKFLOW_ID';
 ```
 
 ### Adjusting Cache Duration
 
-In `src/index.js`, modify the `Cache-Control` header:
+In the API functions (`functions/api/*.js`), modify the `Cache-Control` header:
 
 ```javascript
 'Cache-Control': 'public, max-age=300' // 5 minutes (300 seconds)
+```
+
+### Customizing the UI
+
+- **Colors**: Edit CSS variables in `src/index.css` under `:root`
+- **Chart Colors**: Modify the `colors` array in `src/components/TrendsView.jsx`
+- **Table Columns**: Edit the component files in `src/components/`
+
+## Build Configuration
+
+### Vite Configuration
+
+The `vite.config.js` file configures the build:
+
+```javascript
+import { defineConfig } from 'vite';
+import react from '@vitejs/plugin-react';
+import { cloudflare } from '@cloudflare/vite-plugin';
+
+export default defineConfig({
+  plugins: [
+    react(),
+    cloudflare({
+      configPath: './wrangler.jsonc',
+    }),
+  ],
+});
+```
+
+### Wrangler Configuration
+
+The `wrangler.jsonc` file configures Cloudflare Workers:
+
+```jsonc
+{
+  "name": "workers-sdk-ci-analyzer",
+  "compatibility_date": "2024-01-01"
+}
 ```
 
 ## Troubleshooting
@@ -104,22 +147,59 @@ If you see "API rate limit exceeded":
 2. Reduce the number of runs analyzed (use 20 instead of 50/100)
 3. Wait for the rate limit to reset (shown in error message)
 
-### CORS Errors
+### Build Errors
 
-If you see CORS errors in the browser console:
-- Ensure you're accessing via the correct URL
-- Check that the Worker is properly deployed
+If you encounter build errors:
 
-### Data Not Loading
-
-1. Check browser console for errors
-2. Verify the GitHub API is accessible:
+1. Clear node_modules and reinstall:
 ```bash
-curl https://api.github.com/repos/cloudflare/workers-sdk/actions/workflows
+rm -rf node_modules package-lock.json
+npm install
 ```
-3. Check Wrangler logs:
+
+2. Clear Vite cache:
 ```bash
-wrangler tail
+rm -rf .vite
+```
+
+3. Check that all dependencies are compatible with Vite 6
+
+### Development Server Issues
+
+If `npm run dev` fails to start:
+
+1. Check that port 5173 is available
+2. Try a different port:
+```bash
+vite dev --port 3000
+```
+
+### Worker Function Errors
+
+If API endpoints aren't working:
+
+1. Check the browser console for errors
+2. Verify the function file paths match the URL structure
+3. Check that `onRequest` is properly exported
+4. Use `wrangler tail` to see Worker logs
+
+### Deployment Failures
+
+If deployment fails:
+
+1. Ensure you're logged in to Wrangler:
+```bash
+wrangler login
+```
+
+2. Check your account has Workers enabled
+
+3. Verify `wrangler.jsonc` is valid JSON with comments
+
+4. Try deploying manually:
+```bash
+npm run build
+wrangler deploy
 ```
 
 ## Monitoring
@@ -130,11 +210,23 @@ wrangler tail
 wrangler tail
 ```
 
+This shows real-time logs from your deployed Worker, including:
+- API requests
+- Errors
+- Console logs from functions
+
 ### Check Deployment Status
 
 ```bash
 wrangler deployments list
 ```
+
+### View Worker Analytics
+
+Visit the Cloudflare Dashboard:
+1. Go to Workers & Pages
+2. Select your worker
+3. View analytics, logs, and performance metrics
 
 ## Custom Domain
 
@@ -154,27 +246,128 @@ To use a custom domain:
 npm run deploy
 ```
 
-3. Configure DNS in Cloudflare Dashboard
+3. Configure DNS in Cloudflare Dashboard:
+   - Add a CNAME record pointing to your Worker
+   - Or use a Cloudflare-managed custom domain
 
 ## Performance Tips
 
-1. **Enable Caching**: The API responses are cached for 5 minutes by default
+1. **Enable Caching**: API responses are cached for 5 minutes by default
 2. **Reduce Data**: Analyze fewer runs (20-50) for faster loading
 3. **GitHub Token**: Always use a token to avoid rate limit delays
+4. **CDN**: Cloudflare automatically caches static assets globally
+5. **Code Splitting**: Vite automatically splits code for optimal loading
 
 ## Security Notes
 
-- Never commit `.dev.vars` or tokens to git
+- Never commit `.dev.vars` or tokens to git (already in `.gitignore`)
 - Use Wrangler secrets for production
 - Rotate tokens regularly
 - Use tokens with minimal required scopes
+- Keep dependencies updated
 
 ## Updating
 
 To update the dashboard:
 
-1. Make changes to files in `src/` or `public/`
+1. Make changes to files in `src/`, `functions/`, or styles
 2. Test locally: `npm run dev`
-3. Deploy: `npm run deploy`
+3. Build: `npm run build` (optional - deploy does this automatically)
+4. Deploy: `npm run deploy`
 
 Changes are live immediately after deployment!
+
+## CI/CD Integration
+
+### GitHub Actions Example
+
+Create `.github/workflows/deploy.yml`:
+
+```yaml
+name: Deploy to Cloudflare Workers
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+      
+      - run: npm install
+      
+      - run: npm run build
+      
+      - uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          command: deploy
+```
+
+Add `CLOUDFLARE_API_TOKEN` to your repository secrets.
+
+## Advanced Configuration
+
+### Environment-Specific Builds
+
+You can create different configurations for staging and production:
+
+1. Create `wrangler.staging.jsonc` and `wrangler.production.jsonc`
+
+2. Update package.json:
+```json
+{
+  "scripts": {
+    "deploy:staging": "vite build && wrangler deploy --config wrangler.staging.jsonc",
+    "deploy:production": "vite build && wrangler deploy --config wrangler.production.jsonc"
+  }
+}
+```
+
+### Adding More API Endpoints
+
+File-based routing makes it easy:
+
+1. Create `functions/api/new-endpoint.js`:
+```javascript
+export async function onRequest(context) {
+  const { request, env } = context;
+  // Your logic here
+  return new Response(JSON.stringify({ data: 'value' }), {
+    headers: { 'Content-Type': 'application/json' }
+  });
+}
+```
+
+2. Access at `/api/new-endpoint`
+
+### Using Cloudflare D1 for Persistence
+
+To store historical data:
+
+1. Create a D1 database:
+```bash
+wrangler d1 create ci-analyzer-db
+```
+
+2. Add to `wrangler.jsonc`:
+```jsonc
+{
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "ci-analyzer-db",
+      "database_id": "your-database-id"
+    }
+  ]
+}
+```
+
+3. Access in functions via `context.env.DB`
