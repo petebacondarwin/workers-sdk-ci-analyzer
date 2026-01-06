@@ -1,0 +1,11 @@
+{
+  // Configuration for Workers SDK CI Analyzer
+  "name": "workers-sdk-ci-analyzer",
+  "compatibility_date": "2024-01-01",
+  
+  // Optional: Add a GitHub token for higher API rate limits
+  // Uncomment and configure, or use `wrangler secret put GITHUB_TOKEN`
+  // "vars": {
+  //   "GITHUB_TOKEN": "your_token_here"
+  // }
+}
