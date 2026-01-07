@@ -2,7 +2,7 @@
   "include": ["app/**/*"],
   "compilerOptions": {
     "lib": ["DOM", "DOM.Iterable", "ES2022"],
-    "types": ["@react-router/dev/globals"],
+    // "types": ["@react-router/dev/globals"],
     "isolatedModules": true,
     "esModuleInterop": true,
     "jsx": "react-jsx",

@@ -20,7 +20,7 @@ function DurationsView({ data, loading }) {
             </thead>
             <tbody>
               <tr>
-                <td colSpan="6" className="empty">Loading data...</td>
+                <td colSpan="7" className="empty">Loading data...</td>
               </tr>
             </tbody>
           </table>
@@ -30,7 +30,8 @@ function DurationsView({ data, loading }) {
   }
 
   const taskDurations = Object.values(data.taskDurations || {})
-    .sort((a, b) => b.avgDuration - a.avgDuration);
+    .filter((task: any) => task.durations && task.durations.length > 0) // Only show tasks with non-cached runs
+    .sort((a: any, b: any) => b.avgDuration - a.avgDuration);
 
   if (taskDurations.length === 0) {
     return (
@@ -51,7 +52,7 @@ function DurationsView({ data, loading }) {
             </thead>
             <tbody>
               <tr>
-                <td colSpan="6" className="empty">No duration data available</td>
+                <td colSpan="7" className="empty">No duration data available</td>
               </tr>
             </tbody>
           </table>
@@ -61,23 +62,24 @@ function DurationsView({ data, loading }) {
   }
 
   return (
-    <div className="section">
-      <h2>Turbo Task Durations</h2>
-      <p className="description">Jobs and tasks sorted by average execution time</p>
+      <div className="section">
+        <h2>Turbo Task Durations</h2>
+        <p className="description">Jobs and tasks sorted by average execution time (excluding cached runs)</p>
       <div className="table-container">
         <table>
-          <thead>
-            <tr>
-              <th>Task Name</th>
-              <th>Total Runs</th>
-              <th>Avg Duration</th>
-              <th>Min Duration</th>
-              <th>Max Duration</th>
-              <th>Trend</th>
-            </tr>
-          </thead>
+            <thead>
+              <tr>
+                <th>Task Name</th>
+                <th>Uncached Runs</th>
+                <th>Cached Runs</th>
+                <th>Avg Duration</th>
+                <th>Min Duration</th>
+                <th>Max Duration</th>
+                <th>Trend</th>
+              </tr>
+            </thead>
           <tbody>
-            {taskDurations.map((task, index) => {
+            {taskDurations.map((task: any, index) => {
               const trend = calculateTrend(task.durations);
               const trendIcon = trend > 5 ? '📈' : trend < -5 ? '📉' : '➡️';
               const trendClass = trend > 5 ? 'trend-up' : trend < -5 ? 'trend-down' : 'trend-stable';
@@ -86,6 +88,13 @@ function DurationsView({ data, loading }) {
                 <tr key={index}>
                   <td>{task.name}</td>
                   <td>{task.totalRuns}</td>
+                  <td>
+                    {task.cachedRuns > 0 ? (
+                      <span className="badge badge-success">{task.cachedRuns}</span>
+                    ) : (
+                      <span className="text-muted">0</span>
+                    )}
+                  </td>
                   <td>
                     <span className="duration">{formatDuration(task.avgDuration)}</span>
                   </td>

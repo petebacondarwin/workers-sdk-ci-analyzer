@@ -155,23 +155,8 @@ async function handleCIData(request: Request, env: Env) {
           steps: []
         };
         
-        if (job.started_at && job.completed_at) {
-          const duration = (new Date(job.completed_at).getTime() - new Date(job.started_at).getTime()) / 1000;
-          jobData.duration = duration;
-          
-          const taskName = job.name;
-          if (!processedData.taskDurations[taskName]) {
-            processedData.taskDurations[taskName] = {
-              name: taskName,
-              durations: [],
-              totalRuns: 0,
-              avgDuration: 0
-            };
-          }
-          processedData.taskDurations[taskName].durations.push(duration);
-          processedData.taskDurations[taskName].totalRuns++;
-        }
-        
+        // Check if this job was cached by examining the steps
+        let isCached = false;
         if (job.steps) {
           for (const step of job.steps) {
             jobData.steps.push({
@@ -184,6 +169,22 @@ async function handleCIData(request: Request, env: Env) {
             });
             
             const stepName = step.name.toLowerCase();
+            
+            // Check if any step indicates a cache hit
+            // Turbo will say "cache hit, suppressing logs" when tasks are cached
+            if (stepName.includes('turbo') || stepName.includes('build') || stepName.includes('test')) {
+              // We would need to fetch the logs to check for "cache hit, suppressing logs"
+              // For now, we'll detect very fast runs (< 5 seconds for turbo tasks) as potentially cached
+              if (step.started_at && step.completed_at) {
+                const stepDuration = (new Date(step.completed_at).getTime() - new Date(step.started_at).getTime()) / 1000;
+                // If a turbo/build/test step completes in under 5 seconds, it's likely cached
+                if (stepDuration < 5 && stepDuration > 0) {
+                  isCached = true;
+                }
+              }
+            }
+            
+            // Detect retries and flaky tests
             if ((stepName.includes('retry') || stepName.includes('attempt')) && 
                 step.conclusion === 'success') {
               const testName = step.name;
@@ -208,6 +209,39 @@ async function handleCIData(request: Request, env: Env) {
               });
             }
           }
+        }
+        
+        // Track duration only if not cached
+        if (job.started_at && job.completed_at && !isCached) {
+          const duration = (new Date(job.completed_at).getTime() - new Date(job.started_at).getTime()) / 1000;
+          jobData.duration = duration;
+          jobData.cached = false;
+          
+          const taskName = job.name;
+          if (!processedData.taskDurations[taskName]) {
+            processedData.taskDurations[taskName] = {
+              name: taskName,
+              durations: [],
+              totalRuns: 0,
+              cachedRuns: 0,
+              avgDuration: 0
+            };
+          }
+          processedData.taskDurations[taskName].durations.push(duration);
+          processedData.taskDurations[taskName].totalRuns++;
+        } else if (isCached) {
+          jobData.cached = true;
+          const taskName = job.name;
+          if (!processedData.taskDurations[taskName]) {
+            processedData.taskDurations[taskName] = {
+              name: taskName,
+              durations: [],
+              totalRuns: 0,
+              cachedRuns: 0,
+              avgDuration: 0
+            };
+          }
+          processedData.taskDurations[taskName].cachedRuns++;
         }
         
         if (job.conclusion) {
