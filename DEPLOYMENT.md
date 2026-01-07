@@ -1,361 +1,269 @@
 # Deployment Guide
 
-## Quick Start
+## Overview
 
-### 1. Install Dependencies
+This application uses Cloudflare Workers with:
+- **KV Storage**: Stores CI data fetched from GitHub API
+- **Cron Trigger**: Automatically refreshes data daily at 6 AM UTC
+- **React Router 7**: SSR-enabled React application
 
-```bash
-npm install
-```
+## Prerequisites
 
-### 2. Test Locally
+1. Cloudflare account
+2. Wrangler CLI installed and authenticated (`wrangler login`)
+3. (Optional) GitHub Personal Access Token for higher API rate limits
 
-```bash
-npm run dev
-```
+## Initial Deployment
 
-Visit `http://localhost:5173` to see the dashboard. The Vite dev server provides hot module replacement for instant updates.
+### 1. Deploy with Auto-provisioning
 
-### 3. Deploy to Cloudflare Workers
+The `--x-autoprovision` flag automatically creates the KV namespace:
 
 ```bash
 npm run deploy
 ```
 
-This will build your React app and deploy it to Cloudflare Workers.
+This will:
+- Build the React application
+- Create the KV namespace `CI_DATA_KV` if it doesn't exist
+- Deploy the Worker with the cron trigger
+- Set up the scheduled job (runs daily at 6 AM UTC)
 
-## Configuration
+**After first deployment**, if you want to use `wrangler kv:*` commands locally, add the KV ID to `wrangler.jsonc`:
 
-### GitHub Token (Recommended)
-
-Without authentication, you're limited to 60 requests/hour. With a GitHub token, this increases to 5,000 requests/hour.
-
-#### Option 1: Environment Variable (Development)
-
-1. Copy the example file:
 ```bash
-cp .dev.vars.example .dev.vars
+# Get the KV namespace ID
+wrangler kv:namespace list
+
+# Copy the ID and update wrangler.jsonc:
+# "kv_namespaces": [
+#   {
+#     "binding": "CI_DATA_KV",
+#     "id": "YOUR_KV_ID_HERE"  // ← Add this line
+#   }
+# ]
 ```
 
-2. Edit `.dev.vars` and add your token:
-```
-GITHUB_TOKEN=ghp_your_token_here
-```
+### 2. Add GitHub Token (Optional but Recommended)
 
-3. The token will be automatically loaded during `npm run dev`
-
-#### Option 2: Wrangler Secret (Production)
-
-For production deployment, use Wrangler secrets:
+Without a token, you're limited to 60 requests/hour. With a token, you get 5,000 requests/hour.
 
 ```bash
 wrangler secret put GITHUB_TOKEN
-# Enter your token when prompted
 ```
 
-#### Creating a GitHub Token
+Then paste your GitHub Personal Access Token when prompted.
 
+**To create a GitHub token:**
 1. Go to https://github.com/settings/tokens
-2. Click "Generate new token" (classic)
-3. Give it a descriptive name (e.g., "Workers SDK CI Analyzer")
-4. Select scopes:
-   - For public repos: `public_repo`
-   - For private repos: `repo`
-5. Click "Generate token"
-6. Copy the token immediately (you won't see it again!)
+2. Generate new token (classic)
+3. Select scope: `public_repo` (read access to public repositories)
+4. Copy the token
 
-## Customization
+### 3. Manually Trigger Initial Data Fetch
 
-### Analyzing Different Repositories
+After deployment, trigger the data fetch manually (don't wait for the cron):
 
-Edit `functions/api/ci-data.js` and `functions/api/workflow-runs.js` to change the repository owner/name:
-
-```javascript
-// Change this line in both files:
-`https://api.github.com/repos/cloudflare/workers-sdk/actions/runs?per_page=${limit}`
-
-// To:
-`https://api.github.com/repos/YOUR_OWNER/YOUR_REPO/actions/runs?per_page=${limit}`
+```bash
+curl -X POST https://workers-sdk-ci-analyzer.YOUR_SUBDOMAIN.workers.dev/api/refresh
 ```
 
-The dashboard automatically analyzes **all workflows** in the repository, so you don't need to specify individual workflow IDs.
+Replace `YOUR_SUBDOMAIN` with your Cloudflare Workers subdomain.
 
-### Adjusting Cache Duration
+Or visit your worker URL and the first request will trigger a fetch if KV is empty.
 
-In the API functions (`functions/api/*.js`), modify the `Cache-Control` header:
+## How It Works
 
-```javascript
-'Cache-Control': 'public, max-age=300' // 5 minutes (300 seconds)
-```
+### Data Flow
 
-### Customizing the UI
+1. **Cron Job (Daily at 6 AM UTC)**
+   - Worker's `scheduled()` handler runs
+   - Fetches last 100 workflow runs from `changeset-release/main` branch
+   - Processes job statistics (failure rates, 7-day rolling averages)
+   - Stores processed data in KV with 7-day TTL
 
-- **Colors**: Edit CSS variables in `src/index.css` under `:root`
-- **Chart Colors**: Modify the `colors` array in `src/components/TrendsView.jsx`
-- **Table Columns**: Edit the component files in `src/components/`
+2. **Website Requests**
+   - User visits the dashboard
+   - Frontend calls `/api/ci-data`
+   - Worker reads from KV cache (fast!)
+   - Fallback to fresh fetch if KV is empty
 
-## Build Configuration
+3. **Manual Refresh**
+   - POST to `/api/refresh` to force a data refresh
+   - Useful after deployment or for testing
 
-### Vite Configuration
+### KV Storage Structure
 
-The `vite.config.js` file configures the build:
+**Key**: `ci-data`
 
-```javascript
-import { defineConfig } from 'vite';
-import react from '@vitejs/plugin-react';
-import { cloudflare } from '@cloudflare/vite-plugin';
-
-export default defineConfig({
-  plugins: [
-    react(),
-    cloudflare({
-      configPath: './wrangler.jsonc',
-    }),
-  ],
-});
-```
-
-### Wrangler Configuration
-
-The `wrangler.jsonc` file configures Cloudflare Workers:
-
-```jsonc
+**Value**:
+```json
 {
-  "name": "workers-sdk-ci-analyzer",
-  "compatibility_date": "2024-01-01"
+  "jobStats": {
+    "Job Name": {
+      "name": "Job Name",
+      "totalRuns": 100,
+      "failures": 2,
+      "successes": 98,
+      "failureRate": 2.0,
+      "last7Days": {
+        "totalRuns": 20,
+        "failures": 0,
+        "successes": 20,
+        "failureRate": 0
+      },
+      "recentFailures": [...]
+    }
+  },
+  "jobHistory": [...],
+  "lastUpdated": "2026-01-07T17:00:00.000Z",
+  "totalRuns": 100
 }
 ```
 
-## Troubleshooting
+**TTL**: 7 days
 
-### Rate Limit Errors
+## Cron Schedule
 
-If you see "API rate limit exceeded":
-1. Add a GitHub token (see above)
-2. Reduce the number of runs analyzed (use 20 instead of 50/100)
-3. Wait for the rate limit to reset (shown in error message)
+Current schedule: `0 6 * * *` (6 AM UTC daily)
 
-### Build Errors
+To change the schedule, edit `wrangler.jsonc`:
 
-If you encounter build errors:
-
-1. Clear node_modules and reinstall:
-```bash
-rm -rf node_modules package-lock.json
-npm install
+```jsonc
+"triggers": {
+  "crons": ["0 */6 * * *"]  // Every 6 hours
+}
 ```
 
-2. Clear Vite cache:
-```bash
-rm -rf .vite
-```
-
-3. Check that all dependencies are compatible with Vite 6
-
-### Development Server Issues
-
-If `npm run dev` fails to start:
-
-1. Check that port 5173 is available
-2. Try a different port:
-```bash
-vite dev --port 3000
-```
-
-### Worker Function Errors
-
-If API endpoints aren't working:
-
-1. Check the browser console for errors
-2. Verify the function file paths match the URL structure
-3. Check that `onRequest` is properly exported
-4. Use `wrangler tail` to see Worker logs
-
-### Deployment Failures
-
-If deployment fails:
-
-1. Ensure you're logged in to Wrangler:
-```bash
-wrangler login
-```
-
-2. Check your account has Workers enabled
-
-3. Verify `wrangler.jsonc` is valid JSON with comments
-
-4. Try deploying manually:
-```bash
-npm run build
-wrangler deploy
-```
+Common cron patterns:
+- `0 * * * *` - Every hour
+- `0 */6 * * *` - Every 6 hours
+- `0 0 * * *` - Daily at midnight UTC
+- `0 6 * * *` - Daily at 6 AM UTC (current)
 
 ## Monitoring
 
-### View Live Logs
+### View Logs
 
 ```bash
 wrangler tail
 ```
 
-This shows real-time logs from your deployed Worker, including:
-- API requests
-- Errors
-- Console logs from functions
-
-### Check Deployment Status
+### Check KV Data
 
 ```bash
-wrangler deployments list
+wrangler kv:key get --binding=CI_DATA_KV ci-data
 ```
 
-### View Worker Analytics
+### Trigger Cron Manually (for testing)
 
-Visit the Cloudflare Dashboard:
-1. Go to Workers & Pages
-2. Select your worker
-3. View analytics, logs, and performance metrics
-
-## Custom Domain
-
-To use a custom domain:
-
-1. Add to `wrangler.jsonc`:
-```jsonc
-{
-  "routes": [
-    { "pattern": "ci-analyzer.yourdomain.com", "custom_domain": true }
-  ]
-}
+```bash
+wrangler trigger --cron "0 6 * * *"
 ```
 
-2. Deploy:
+Or use the API endpoint:
+
+```bash
+curl -X POST https://your-worker.workers.dev/api/refresh
+```
+
+## Updating the Application
+
+1. Make your changes
+2. Run tests locally: `npm run dev`
+3. Deploy: `npm run deploy`
+
+The deployment will:
+- Build the new version
+- Update the Worker code
+- Keep existing KV data intact
+- Maintain the cron schedule
+
+## Troubleshooting
+
+### "KV namespace not found"
+
+Solution: Deploy with `--x-autoprovision`:
 ```bash
 npm run deploy
 ```
 
-3. Configure DNS in Cloudflare Dashboard:
-   - Add a CNAME record pointing to your Worker
-   - Or use a Cloudflare-managed custom domain
+### "No data available" on dashboard
 
-## Performance Tips
+Solutions:
+1. Manually trigger refresh: `curl -X POST https://your-worker.workers.dev/api/refresh`
+2. Wait for next cron run (6 AM UTC)
+3. Check logs: `wrangler tail`
 
-1. **Enable Caching**: API responses are cached for 5 minutes by default
-2. **Reduce Data**: Analyze fewer runs (20-50) for faster loading
-3. **GitHub Token**: Always use a token to avoid rate limit delays
-4. **CDN**: Cloudflare automatically caches static assets globally
-5. **Code Splitting**: Vite automatically splits code for optimal loading
+### "GitHub API rate limit exceeded"
 
-## Security Notes
+Solution: Add a GitHub token (see step 2 above)
 
-- Never commit `.dev.vars` or tokens to git (already in `.gitignore`)
-- Use Wrangler secrets for production
-- Rotate tokens regularly
-- Use tokens with minimal required scopes
-- Keep dependencies updated
+### Cron not running
 
-## Updating
+1. Check deployment: `wrangler deployments list`
+2. View cron status in Cloudflare dashboard: Workers & Pages → Your Worker → Triggers
+3. Manually trigger: `wrangler trigger --cron "0 6 * * *"`
 
-To update the dashboard:
+## Environment Variables
 
-1. Make changes to files in `src/`, `functions/`, or styles
-2. Test locally: `npm run dev`
-3. Build: `npm run build` (optional - deploy does this automatically)
-4. Deploy: `npm run deploy`
+Optional configuration in `wrangler.jsonc`:
 
-Changes are live immediately after deployment!
-
-## CI/CD Integration
-
-### GitHub Actions Example
-
-Create `.github/workflows/deploy.yml`:
-
-```yaml
-name: Deploy to Cloudflare Workers
-
-on:
-  push:
-    branches:
-      - main
-
-jobs:
-  deploy:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      
-      - uses: actions/setup-node@v3
-        with:
-          node-version: '18'
-      
-      - run: npm install
-      
-      - run: npm run build
-      
-      - uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          command: deploy
-```
-
-Add `CLOUDFLARE_API_TOKEN` to your repository secrets.
-
-## Advanced Configuration
-
-### Environment-Specific Builds
-
-You can create different configurations for staging and production:
-
-1. Create `wrangler.staging.jsonc` and `wrangler.production.jsonc`
-
-2. Update package.json:
-```json
+```jsonc
 {
-  "scripts": {
-    "deploy:staging": "vite build && wrangler deploy --config wrangler.staging.jsonc",
-    "deploy:production": "vite build && wrangler deploy --config wrangler.production.jsonc"
+  "vars": {
+    // Add non-secret variables here
   }
 }
 ```
 
-### Adding More API Endpoints
-
-File-based routing makes it easy:
-
-1. Create `functions/api/new-endpoint.js`:
-```javascript
-export async function onRequest(context) {
-  const { request, env } = context;
-  // Your logic here
-  return new Response(JSON.stringify({ data: 'value' }), {
-    headers: { 'Content-Type': 'application/json' }
-  });
-}
-```
-
-2. Access at `/api/new-endpoint`
-
-### Using Cloudflare D1 for Persistence
-
-To store historical data:
-
-1. Create a D1 database:
+For secrets, use:
 ```bash
-wrangler d1 create ci-analyzer-db
+wrangler secret put SECRET_NAME
 ```
 
-2. Add to `wrangler.jsonc`:
+## Production Deployment
+
+For production with custom domain:
+
+1. Add route in `wrangler.jsonc`:
 ```jsonc
 {
-  "d1_databases": [
+  "routes": [
     {
-      "binding": "DB",
-      "database_name": "ci-analyzer-db",
-      "database_id": "your-database-id"
+      "pattern": "ci-dashboard.example.com/*",
+      "zone_name": "example.com"
     }
   ]
 }
 ```
 
-3. Access in functions via `context.env.DB`
+2. Deploy to production:
+```bash
+npm run deploy:prod
+```
+
+## Cost Estimation
+
+With Cloudflare Workers free tier:
+- **Requests**: 100,000/day (plenty for a dashboard)
+- **KV Storage**: 1 GB (we use < 1 MB)
+- **KV Reads**: 100,000/day (one per page visit)
+- **KV Writes**: 1,000/day (one per cron job = 1/day)
+- **Cron Triggers**: Included
+
+**Expected cost**: $0/month (within free tier)
+
+## Security
+
+- GitHub token stored as Worker secret (encrypted)
+- CORS enabled for API endpoints
+- Rate limiting handled by GitHub API
+- No sensitive data stored in KV
+
+## Support
+
+For issues or questions:
+1. Check logs: `wrangler tail`
+2. Review Cloudflare Workers documentation
+3. Check GitHub Actions API status: https://www.githubstatus.com/

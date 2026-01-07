@@ -7,8 +7,10 @@
     "dev": "react-router dev",
     "build": "react-router build",
     "preview": "npm run build && vite preview",
-    "deploy": "npm run build && wrangler deploy",
-    "typegen": "wrangler types"
+    "deploy": "npm run build && wrangler deploy --x-autoprovision",
+    "deploy:prod": "npm run build && wrangler deploy --x-autoprovision --env production",
+    "typegen": "wrangler types",
+    "trigger-cron": "wrangler deploy --x-autoprovision && curl -X POST https://workers-sdk-ci-analyzer.YOUR_SUBDOMAIN.workers.dev/api/refresh"
   },
   "keywords": [
     "cloudflare",
@@ -35,6 +37,6 @@
     "@types/react-dom": "^18.2.17",
     "@vitejs/plugin-react": "^4.2.1",
     "vite": "^6.1.0",
-    "wrangler": "^3.22.0"
+    "wrangler": "^4.57.0"
   }
 }

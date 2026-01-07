@@ -25,14 +25,6 @@ export default function Home({ params }: Route.ComponentProps) {
 
   return (
     <div className="container">
-      <Header
-        loading={loading}
-        lastUpdated={lastUpdated}
-        runLimit={runLimit}
-        onLimitChange={handleLimitChange}
-        onRefresh={handleRefresh}
-      />
-
       <main>
         <div className="page-header">
           <h1>changeset-release/main CI Health</h1>
@@ -51,6 +43,13 @@ export default function Home({ params }: Route.ComponentProps) {
       </main>
 
       <footer>
+        <Header
+          loading={loading}
+          lastUpdated={lastUpdated}
+          runLimit={runLimit}
+          onLimitChange={handleLimitChange}
+          onRefresh={handleRefresh}
+        />
         <p>Data sourced from GitHub Actions API • Branch: changeset-release/main</p>
         <p className="note">
           Note: Rate limits apply to unauthenticated requests (60 requests/hour). 

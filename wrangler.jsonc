@@ -5,6 +5,18 @@
   "compatibility_date": "2024-09-23",
   "compatibility_flags": ["nodejs_compat"],
   
+  // KV namespace for storing CI data
+  "kv_namespaces": [
+    {
+      "binding": "CI_DATA_KV"
+    }
+  ],
+  
+  // Cron trigger to fetch CI data daily at 6 AM UTC
+  "triggers": {
+    "crons": ["0 6 * * *"]
+  },
+  
   // Optional: Add a GitHub token for higher API rate limits
   // Uncomment and configure, or use `wrangler secret put GITHUB_TOKEN`
   // "vars": {
