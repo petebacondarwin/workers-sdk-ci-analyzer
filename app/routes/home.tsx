@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { useCIData } from '../hooks/useCIData';
 import Header from '../components/Header';
 import Tabs from '../components/Tabs';
@@ -7,23 +6,25 @@ import FlakyTestsView from '../components/FlakyTestsView';
 import FailureRatesView from '../components/FailureRatesView';
 import DurationsView from '../components/DurationsView';
 import TrendsView from '../components/TrendsView';
+import type { Route } from "./+types/home";
 
-function Dashboard({ defaultTab = 'flaky' }) {
-  const [activeTab, setActiveTab] = useState(defaultTab);
+export function meta({}: Route.MetaArgs) {
+  return [
+    { title: "Workers SDK CI Analyzer" },
+    { name: "description", content: "CI health dashboard for cloudflare/workers-sdk" },
+  ];
+}
+
+export default function Home({ params }: Route.ComponentProps) {
+  const [activeTab, setActiveTab] = useState('flaky');
   const [runLimit, setRunLimit] = useState(50);
   const { data, loading, error, lastUpdated, refetch } = useCIData(runLimit);
-  const navigate = useNavigate();
-
-  const handleTabChange = (tab) => {
-    setActiveTab(tab);
-    navigate(`/${tab === 'flaky' ? '' : tab}`);
-  };
 
   const handleRefresh = () => {
     refetch();
   };
 
-  const handleLimitChange = (e) => {
+  const handleLimitChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     setRunLimit(parseInt(e.target.value));
   };
 
@@ -37,7 +38,7 @@ function Dashboard({ defaultTab = 'flaky' }) {
         onRefresh={handleRefresh}
       />
 
-      <Tabs activeTab={activeTab} onTabChange={handleTabChange} />
+      <Tabs activeTab={activeTab} onTabChange={setActiveTab} />
 
       <main>
         {error && (
@@ -62,5 +63,3 @@ function Dashboard({ defaultTab = 'flaky' }) {
     </div>
   );
 }
-
-export default Dashboard;

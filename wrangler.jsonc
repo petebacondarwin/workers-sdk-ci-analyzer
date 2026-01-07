@@ -1,7 +1,9 @@
 {
   // Configuration for Workers SDK CI Analyzer
   "name": "workers-sdk-ci-analyzer",
-  "compatibility_date": "2024-01-01",
+  "main": "./workers/app.ts",
+  "compatibility_date": "2024-09-23",
+  "compatibility_flags": ["nodejs_compat"],
   
   // Optional: Add a GitHub token for higher API rate limits
   // Uncomment and configure, or use `wrangler secret put GITHUB_TOKEN`

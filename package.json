@@ -4,10 +4,11 @@
   "description": "A dashboard for analyzing CI health and test flakiness in the cloudflare/workers-sdk repository",
   "type": "module",
   "scripts": {
-    "dev": "vite dev",
-    "build": "vite build",
-    "preview": "vite preview",
-    "deploy": "vite build && wrangler deploy"
+    "dev": "react-router dev",
+    "build": "react-router build",
+    "preview": "npm run build && vite preview",
+    "deploy": "npm run build && wrangler deploy",
+    "typegen": "wrangler types"
   },
   "keywords": [
     "cloudflare",
@@ -19,11 +20,12 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
-    "react": "^18.2.0",
-    "react-dom": "^18.2.0",
-    "react-router-dom": "^6.20.0",
+    "@react-router/dev": "^7.11.0",
     "chart.js": "^4.4.0",
-    "react-chartjs-2": "^5.2.0"
+    "react": "^18.2.0",
+    "react-chartjs-2": "^5.2.0",
+    "react-dom": "^18.2.0",
+    "react-router": "^7.11.0"
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "^1.19.0",
