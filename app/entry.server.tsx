@@ -8,20 +8,27 @@ export default async function handleRequest(
   responseStatusCode: number,
   responseHeaders: Headers,
   routerContext: EntryContext,
-  loadContext: AppLoadContext,
+  _loadContext: AppLoadContext,
 ) {
+  let shellRendered = false;
+  const userAgent = request.headers.get("user-agent");
+
   const body = await renderToReadableStream(
     <ServerRouter context={routerContext} url={request.url} />,
     {
-      signal: request.signal,
       onError(error: unknown) {
-        console.error(error);
         responseStatusCode = 500;
+        // Log streaming rendering errors from inside the shell
+        if (shellRendered) {
+          console.error(error);
+        }
       },
     },
   );
+  shellRendered = true;
 
-  if (isbot(request.headers.get("user-agent") || "")) {
+  // Ensure requests from bots and SPA Mode renders wait for all content to load before responding
+  if ((userAgent && isbot(userAgent)) || routerContext.isSpaMode) {
     await body.allReady;
   }
 
