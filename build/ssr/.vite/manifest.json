@@ -1,0 +1,30 @@
+{
+  "_worker-entry-hMVlZu3V.js": {
+    "file": "assets/worker-entry-hMVlZu3V.js",
+    "name": "worker-entry",
+    "dynamicImports": [
+      "virtual:react-router/server-build"
+    ]
+  },
+  "virtual:cloudflare/worker-entry": {
+    "file": "index.js",
+    "name": "index",
+    "src": "virtual:cloudflare/worker-entry",
+    "isEntry": true,
+    "imports": [
+      "_worker-entry-hMVlZu3V.js"
+    ]
+  },
+  "virtual:react-router/server-build": {
+    "file": "assets/server-build-_IOLc-DE.js",
+    "name": "server-build",
+    "src": "virtual:react-router/server-build",
+    "isDynamicEntry": true,
+    "imports": [
+      "_worker-entry-hMVlZu3V.js"
+    ],
+    "css": [
+      "assets/server-build-RsNmpsDP.css"
+    ]
+  }
+}
