@@ -347,6 +347,227 @@ footer p {
   color: var(--text-muted);
 }
 
+/* Job Failure Rates View */
+.page-header {
+  text-align: center;
+  margin-bottom: 40px;
+}
+
+.page-header h1 {
+  font-size: 2rem;
+  margin-bottom: 10px;
+}
+
+.page-header .subtitle {
+  font-size: 1rem;
+  margin-bottom: 0;
+}
+
+.job-failure-rates {
+  margin-bottom: 40px;
+}
+
+.stats-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 20px;
+  margin-bottom: 30px;
+}
+
+.stat-card {
+  background-color: var(--surface-color);
+  border-radius: 12px;
+  padding: 25px;
+  text-align: center;
+  border: 1px solid var(--border-color);
+}
+
+.stat-card h3 {
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  margin-bottom: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.stat-value {
+  font-size: 2.5rem;
+  font-weight: 700;
+  color: var(--primary-color);
+}
+
+.jobs-table-container {
+  overflow-x: auto;
+  background-color: var(--surface-color);
+  border-radius: 12px;
+  padding: 20px;
+  border: 1px solid var(--border-color);
+}
+
+.jobs-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.jobs-table thead {
+  background-color: var(--bg-color);
+}
+
+.jobs-table th {
+  padding: 15px;
+  text-align: left;
+  font-weight: 600;
+  color: var(--text-color);
+  border-bottom: 2px solid var(--border-color);
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.jobs-table td {
+  padding: 15px;
+  border-bottom: 1px solid var(--border-color);
+  vertical-align: middle;
+}
+
+.jobs-table tbody tr:hover {
+  background-color: rgba(246, 130, 31, 0.05);
+}
+
+.jobs-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.jobs-table .job-name {
+  font-weight: 500;
+  color: var(--text-color);
+  max-width: 300px;
+}
+
+.jobs-table .failure-rate {
+  text-align: center;
+}
+
+.rate-badge {
+  display: inline-block;
+  padding: 6px 14px;
+  border-radius: 20px;
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+.rate-badge.status-success {
+  background-color: rgba(34, 197, 94, 0.2);
+  color: var(--success-color);
+  border: 1px solid var(--success-color);
+}
+
+.rate-badge.status-warning {
+  background-color: rgba(234, 179, 8, 0.2);
+  color: var(--warning-color);
+  border: 1px solid var(--warning-color);
+}
+
+.rate-badge.status-danger {
+  background-color: rgba(239, 68, 68, 0.2);
+  color: var(--danger-color);
+  border: 1px solid var(--danger-color);
+}
+
+.jobs-table .stats {
+  font-size: 0.9rem;
+  color: var(--text-muted);
+}
+
+.jobs-table .failure-count {
+  color: var(--danger-color);
+  font-weight: 600;
+}
+
+.jobs-table .success-count {
+  color: var(--success-color);
+  font-weight: 600;
+}
+
+.jobs-table .total-count {
+  color: var(--text-muted);
+}
+
+.jobs-table .recent-failures {
+  font-size: 0.85rem;
+}
+
+.failure-links {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.failure-link {
+  display: inline-block;
+  padding: 4px 10px;
+  background-color: var(--bg-color);
+  border: 1px solid var(--danger-color);
+  border-radius: 6px;
+  color: var(--danger-color);
+  text-decoration: none;
+  font-weight: 600;
+  transition: all 0.2s;
+}
+
+.failure-link:hover {
+  background-color: var(--danger-color);
+  color: white;
+}
+
+.no-failures {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.loading-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 20px;
+  text-align: center;
+}
+
+.loading-spinner {
+  border: 4px solid var(--border-color);
+  border-top: 4px solid var(--primary-color);
+  border-radius: 50%;
+  width: 50px;
+  height: 50px;
+  animation: spin 1s linear infinite;
+  margin-bottom: 20px;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.empty-state {
+  text-align: center;
+  padding: 60px 20px;
+  color: var(--text-muted);
+}
+
+/* Status row highlighting */
+.jobs-table tbody tr.status-danger {
+  border-left: 4px solid var(--danger-color);
+}
+
+.jobs-table tbody tr.status-warning {
+  border-left: 4px solid var(--warning-color);
+}
+
+.jobs-table tbody tr.status-success {
+  border-left: 4px solid var(--success-color);
+}
+
 .duration {
   font-family: 'Courier New', monospace;
   color: var(--primary-color);

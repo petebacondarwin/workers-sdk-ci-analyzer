@@ -43,10 +43,10 @@ export default {
 async function handleCIData(request: Request, env: Env) {
   try {
     const url = new URL(request.url);
-    const limit = parseInt(url.searchParams.get('limit') || '50');
+    const limit = parseInt(url.searchParams.get('limit') || '100');
     
     const runsResponse = await fetch(
-      `https://api.github.com/repos/cloudflare/workers-sdk/actions/runs?per_page=${limit}&status=completed`,
+      `https://api.github.com/repos/cloudflare/workers-sdk/actions/runs?per_page=${limit}&branch=changeset-release/main`,
       {
         headers: {
           'Accept': 'application/vnd.github+json',
@@ -64,57 +64,13 @@ async function handleCIData(request: Request, env: Env) {
     const runs = runsData.workflow_runs || [];
     
     const processedData: any = {
-      runs: [],
-      flakyTests: {},
-      failureRates: {},
-      taskDurations: {},
-      rerunFlakiness: {}
+      jobStats: {},
+      jobHistory: []
     };
     
-    // Group runs by head SHA to detect re-runs
-    const runsByCommit: any = {};
-    for (const run of runs) {
-      const sha = run.head_sha;
-      if (!runsByCommit[sha]) {
-        runsByCommit[sha] = [];
-      }
-      runsByCommit[sha].push(run);
-    }
-    
-    // Detect flaky tests from re-runs
-    for (const sha in runsByCommit) {
-      const commitRuns = runsByCommit[sha].sort((a: any, b: any) => 
-        new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-      );
-      
-      if (commitRuns.length > 1) {
-        const failedRuns = commitRuns.filter((r: any) => r.conclusion === 'failure');
-        const successfulRuns = commitRuns.filter((r: any) => r.conclusion === 'success');
-        
-        if (failedRuns.length > 0 && successfulRuns.length > 0) {
-          const latestSuccess = successfulRuns[successfulRuns.length - 1];
-          
-          if (!processedData.rerunFlakiness[sha]) {
-            processedData.rerunFlakiness[sha] = {
-              commit: sha.substring(0, 7),
-              fullSha: sha,
-              attempts: commitRuns.length,
-              failures: failedRuns.length,
-              successes: successfulRuns.length,
-              runs: commitRuns.map((r: any) => ({
-                id: r.id,
-                number: r.run_number,
-                conclusion: r.conclusion,
-                created_at: r.created_at,
-                url: r.html_url
-              })),
-              firstFailure: failedRuns[0],
-              finalSuccess: latestSuccess
-            };
-          }
-        }
-      }
-    }
+    // Calculate 7-day window
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
     
     for (const run of runs) {
       const jobsResponse = await fetch(run.jobs_url, {
@@ -129,223 +85,84 @@ async function handleCIData(request: Request, env: Env) {
       
       const jobsData = await jobsResponse.json() as any;
       const jobs = jobsData.jobs || [];
-      
-      const runData: any = {
-        id: run.id,
-        name: run.name,
-        status: run.status,
-        conclusion: run.conclusion,
-        created_at: run.created_at,
-        updated_at: run.updated_at,
-        html_url: run.html_url,
-        run_number: run.run_number,
-        head_sha: run.head_sha,
-        jobs: []
-      };
+      const runCreatedAt = new Date(run.created_at);
+      const isInLast7Days = runCreatedAt >= sevenDaysAgo;
       
       for (const job of jobs) {
-        const jobData: any = {
-          id: job.id,
-          name: job.name,
-          status: job.status,
-          conclusion: job.conclusion,
-          started_at: job.started_at,
-          completed_at: job.completed_at,
-          html_url: job.html_url,
-          steps: []
-        };
-        
-        // Check if this job was cached by examining the steps
-        let isCached = false;
-        if (job.steps) {
-          for (const step of job.steps) {
-            jobData.steps.push({
-              name: step.name,
-              status: step.status,
-              conclusion: step.conclusion,
-              number: step.number,
-              started_at: step.started_at,
-              completed_at: step.completed_at
-            });
-            
-            const stepName = step.name.toLowerCase();
-            
-            // Check if any step indicates a cache hit
-            // Turbo will say "cache hit, suppressing logs" when tasks are cached
-            if (stepName.includes('turbo') || stepName.includes('build') || stepName.includes('test')) {
-              // We would need to fetch the logs to check for "cache hit, suppressing logs"
-              // For now, we'll detect very fast runs (< 5 seconds for turbo tasks) as potentially cached
-              if (step.started_at && step.completed_at) {
-                const stepDuration = (new Date(step.completed_at).getTime() - new Date(step.started_at).getTime()) / 1000;
-                // If a turbo/build/test step completes in under 5 seconds, it's likely cached
-                if (stepDuration < 5 && stepDuration > 0) {
-                  isCached = true;
-                }
-              }
-            }
-            
-            // Detect retries and flaky tests
-            if ((stepName.includes('retry') || stepName.includes('attempt')) && 
-                step.conclusion === 'success') {
-              const testName = step.name;
-              if (!processedData.flakyTests[testName]) {
-                processedData.flakyTests[testName] = {
-                  name: testName,
-                  retryCount: 0,
-                  occurrences: 0,
-                  rerunCount: 0,
-                  rerunOccurrences: 0,
-                  runs: [],
-                  rerunInstances: []
-                };
-              }
-              processedData.flakyTests[testName].retryCount++;
-              processedData.flakyTests[testName].occurrences++;
-              processedData.flakyTests[testName].runs.push({
-                runId: run.id,
-                runNumber: run.run_number,
-                jobName: job.name,
-                url: run.html_url
-              });
-            }
-          }
+        // Skip cancelled jobs
+        if (job.conclusion === 'cancelled' || job.conclusion === 'skipped') {
+          continue;
         }
         
-        // Track duration only if not cached
-        if (job.started_at && job.completed_at && !isCached) {
-          const duration = (new Date(job.completed_at).getTime() - new Date(job.started_at).getTime()) / 1000;
-          jobData.duration = duration;
-          jobData.cached = false;
-          
-          const taskName = job.name;
-          if (!processedData.taskDurations[taskName]) {
-            processedData.taskDurations[taskName] = {
-              name: taskName,
-              durations: [],
-              totalRuns: 0,
-              cachedRuns: 0,
-              avgDuration: 0
-            };
-          }
-          processedData.taskDurations[taskName].durations.push(duration);
-          processedData.taskDurations[taskName].totalRuns++;
-        } else if (isCached) {
-          jobData.cached = true;
-          const taskName = job.name;
-          if (!processedData.taskDurations[taskName]) {
-            processedData.taskDurations[taskName] = {
-              name: taskName,
-              durations: [],
-              totalRuns: 0,
-              cachedRuns: 0,
-              avgDuration: 0
-            };
-          }
-          processedData.taskDurations[taskName].cachedRuns++;
-        }
+        const jobName = job.name;
         
-        if (job.conclusion) {
-          const jobName = job.name;
-          if (!processedData.failureRates[jobName]) {
-            processedData.failureRates[jobName] = {
-              name: jobName,
+        // Initialize job stats if not exists
+        if (!processedData.jobStats[jobName]) {
+          processedData.jobStats[jobName] = {
+            name: jobName,
+            totalRuns: 0,
+            failures: 0,
+            successes: 0,
+            failureRate: 0,
+            last7Days: {
               totalRuns: 0,
               failures: 0,
               successes: 0,
               failureRate: 0
-            };
-          }
-          processedData.failureRates[jobName].totalRuns++;
+            },
+            recentFailures: []
+          };
+        }
+        
+        // Overall stats
+        processedData.jobStats[jobName].totalRuns++;
+        if (job.conclusion === 'failure') {
+          processedData.jobStats[jobName].failures++;
+          processedData.jobStats[jobName].recentFailures.push({
+            runId: run.id,
+            runNumber: run.run_number,
+            runUrl: run.html_url,
+            createdAt: run.created_at,
+            jobUrl: job.html_url
+          });
+        } else if (job.conclusion === 'success') {
+          processedData.jobStats[jobName].successes++;
+        }
+        
+        // Last 7 days stats
+        if (isInLast7Days) {
+          processedData.jobStats[jobName].last7Days.totalRuns++;
           if (job.conclusion === 'failure') {
-            processedData.failureRates[jobName].failures++;
+            processedData.jobStats[jobName].last7Days.failures++;
           } else if (job.conclusion === 'success') {
-            processedData.failureRates[jobName].successes++;
+            processedData.jobStats[jobName].last7Days.successes++;
           }
         }
         
-        runData.jobs.push(jobData);
-      }
-      
-      processedData.runs.push(runData);
-    }
-    
-    // Detect job-level flakiness from re-runs
-    const jobsByCommitAndName: any = {};
-    for (const run of processedData.runs) {
-      for (const job of run.jobs) {
-        const key = `${run.head_sha}:${job.name}`;
-        if (!jobsByCommitAndName[key]) {
-          jobsByCommitAndName[key] = [];
-        }
-        jobsByCommitAndName[key].push({
-          ...job,
-          runId: run.id,
-          runNumber: run.run_number,
-          runUrl: run.html_url,
-          runCreatedAt: run.created_at,
-          commitSha: run.head_sha
+        // Track job history for trend analysis
+        processedData.jobHistory.push({
+          jobName: jobName,
+          conclusion: job.conclusion,
+          createdAt: run.created_at,
+          runNumber: run.run_number
         });
       }
     }
     
-    for (const key in jobsByCommitAndName) {
-      const jobs = jobsByCommitAndName[key].sort((a: any, b: any) => 
-        new Date(a.runCreatedAt).getTime() - new Date(b.runCreatedAt).getTime()
-      );
+    // Calculate failure rates
+    for (const jobName in processedData.jobStats) {
+      const job = processedData.jobStats[jobName];
       
-      if (jobs.length > 1) {
-        const failedJobs = jobs.filter((j: any) => j.conclusion === 'failure');
-        const successfulJobs = jobs.filter((j: any) => j.conclusion === 'success');
-        
-        if (failedJobs.length > 0 && successfulJobs.length > 0) {
-          const jobName = jobs[0].name;
-          const commitSha = jobs[0].commitSha;
-          
-          if (!processedData.flakyTests[jobName]) {
-            processedData.flakyTests[jobName] = {
-              name: jobName,
-              retryCount: 0,
-              occurrences: 0,
-              rerunCount: 0,
-              rerunOccurrences: 0,
-              runs: [],
-              rerunInstances: []
-            };
-          }
-          
-          processedData.flakyTests[jobName].rerunCount += failedJobs.length;
-          processedData.flakyTests[jobName].rerunOccurrences++;
-          processedData.flakyTests[jobName].rerunInstances.push({
-            commit: commitSha.substring(0, 7),
-            fullCommit: commitSha,
-            attempts: jobs.length,
-            failures: failedJobs.length,
-            successes: successfulJobs.length,
-            failedRuns: failedJobs.map((j: any) => ({
-              runNumber: j.runNumber,
-              url: j.runUrl,
-              createdAt: j.runCreatedAt
-            })),
-            successfulRuns: successfulJobs.map((j: any) => ({
-              runNumber: j.runNumber,
-              url: j.runUrl,
-              createdAt: j.runCreatedAt
-            }))
-          });
-        }
-      }
-    }
-    
-    for (const taskName in processedData.taskDurations) {
-      const task = processedData.taskDurations[taskName];
-      task.avgDuration = task.durations.reduce((a: number, b: number) => a + b, 0) / task.durations.length;
-      task.maxDuration = Math.max(...task.durations);
-      task.minDuration = Math.min(...task.durations);
-    }
-    
-    for (const jobName in processedData.failureRates) {
-      const job = processedData.failureRates[jobName];
-      job.failureRate = (job.failures / job.totalRuns) * 100;
+      // Overall failure rate
+      const totalNonCancelled = job.failures + job.successes;
+      job.failureRate = totalNonCancelled > 0 ? (job.failures / totalNonCancelled) * 100 : 0;
+      
+      // Last 7 days failure rate
+      const total7Days = job.last7Days.failures + job.last7Days.successes;
+      job.last7Days.failureRate = total7Days > 0 ? (job.last7Days.failures / total7Days) * 100 : 0;
+      
+      // Keep only the 5 most recent failures
+      job.recentFailures = job.recentFailures.slice(-5);
     }
     
     return new Response(JSON.stringify(processedData), {

@@ -1,23 +1,18 @@
 import { useState } from 'react';
 import { useCIData } from '../hooks/useCIData';
 import Header from '../components/Header';
-import Tabs from '../components/Tabs';
-import FlakyTestsView from '../components/FlakyTestsView';
-import FailureRatesView from '../components/FailureRatesView';
-import DurationsView from '../components/DurationsView';
-import TrendsView from '../components/TrendsView';
+import JobFailureRatesView from '../components/JobFailureRatesView';
 import type { Route } from "./+types/home";
 
 export function meta({}: Route.MetaArgs) {
   return [
-    { title: "Workers SDK CI Analyzer" },
-    { name: "description", content: "CI health dashboard for cloudflare/workers-sdk" },
+    { title: "Workers SDK CI Analyzer - changeset-release/main" },
+    { name: "description", content: "CI health dashboard for cloudflare/workers-sdk changeset-release/main branch" },
   ];
 }
 
 export default function Home({ params }: Route.ComponentProps) {
-  const [activeTab, setActiveTab] = useState('flaky');
-  const [runLimit, setRunLimit] = useState(50);
+  const [runLimit, setRunLimit] = useState(100);
   const { data, loading, error, lastUpdated, refetch } = useCIData(runLimit);
 
   const handleRefresh = () => {
@@ -38,23 +33,25 @@ export default function Home({ params }: Route.ComponentProps) {
         onRefresh={handleRefresh}
       />
 
-      <Tabs activeTab={activeTab} onTabChange={setActiveTab} />
-
       <main>
+        <div className="page-header">
+          <h1>changeset-release/main CI Health</h1>
+          <p className="subtitle">
+            Monitoring CI jobs that run on Version Packages PRs. These jobs should never fail.
+          </p>
+        </div>
+
         {error && (
           <div className="error-message">
             Failed to load data: {error}. Please try again.
           </div>
         )}
 
-        {activeTab === 'flaky' && <FlakyTestsView data={data} loading={loading} />}
-        {activeTab === 'failures' && <FailureRatesView data={data} loading={loading} />}
-        {activeTab === 'durations' && <DurationsView data={data} loading={loading} />}
-        {activeTab === 'trends' && <TrendsView data={data} loading={loading} />}
+        <JobFailureRatesView data={data} loading={loading} />
       </main>
 
       <footer>
-        <p>Data sourced from GitHub Actions API</p>
+        <p>Data sourced from GitHub Actions API • Branch: changeset-release/main</p>
         <p className="note">
           Note: Rate limits apply to unauthenticated requests (60 requests/hour). 
           For higher limits, configure a GitHub token.

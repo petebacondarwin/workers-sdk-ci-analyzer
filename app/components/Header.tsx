@@ -1,19 +1,12 @@
 function Header({ loading, lastUpdated, runLimit, onLimitChange, onRefresh }) {
   return (
     <header>
-      <h1>Workers SDK CI Analyzer</h1>
-      <p className="subtitle">
-        Analyzing CI health for{' '}
-        <a href="https://github.com/cloudflare/workers-sdk" target="_blank" rel="noopener noreferrer">
-          cloudflare/workers-sdk
-        </a>
-      </p>
       <div className="controls">
-        <label htmlFor="run-limit">Workflow runs to analyze:</label>
+        <label htmlFor="run-limit">Workflow runs:</label>
         <select id="run-limit" value={runLimit} onChange={onLimitChange}>
-          <option value="20">Last 20 runs</option>
           <option value="50">Last 50 runs</option>
           <option value="100">Last 100 runs</option>
+          <option value="200">Last 200 runs</option>
         </select>
         <button id="refresh-btn" onClick={onRefresh} disabled={loading}>
           Refresh Data
