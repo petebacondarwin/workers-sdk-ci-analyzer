@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "react-router dev",
-    "build": "react-router build; node scripts/fix-build.js; react-router build",
+    "build": "react-router build",
     "preview": "npm run build && vite preview",
     "deploy": "npm run build && wrangler deploy",
     "typegen": "wrangler types"
