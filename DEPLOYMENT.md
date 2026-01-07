@@ -17,7 +17,7 @@ This application uses Cloudflare Workers with:
 
 ### 1. Deploy with Auto-provisioning
 
-The `--x-autoprovision` flag automatically creates the KV namespace:
+The `--x-provision` flag automatically creates the KV namespace:
 
 ```bash
 npm run deploy
@@ -183,7 +183,7 @@ The deployment will:
 
 ### "KV namespace not found"
 
-Solution: Deploy with `--x-autoprovision`:
+Solution: Deploy with `--x-provision`:
 ```bash
 npm run deploy
 ```
