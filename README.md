@@ -174,6 +174,10 @@ The analyzer uses two sophisticated methods to identify flaky tests:
   - Bonus penalty if both detection methods find issues (+20%)
 - **Failure Rate**: Percentage of runs that failed for each job
 - **Duration Trends**: Compares recent durations to historical averages
+  - **Smart Cache Detection**: Automatically excludes cached runs from duration analysis
+  - Detects cached Turbo tasks (runs completing in <5 seconds)
+  - Shows separate counts for cached vs. uncached runs
+  - Ensures duration metrics reflect actual build/test times
 - **Time Series**: Tracks metrics across workflow runs
 
 ## API Endpoints
