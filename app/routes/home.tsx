@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router';
 import { useCIData } from '../hooks/useCIData';
 import Header from '../components/Header';
 import JobFailureRatesView from '../components/JobFailureRatesView';
@@ -14,8 +15,18 @@ export function meta({}: Route.MetaArgs) {
 }
 
 export default function Home({ params }: Route.ComponentProps) {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [runLimit] = useState(100);
+  
+  // Initialize date range from URL params or default to last 7 days
   const [dateRange, setDateRange] = useState<{ start: string; end: string }>(() => {
+    const urlStart = searchParams.get('start');
+    const urlEnd = searchParams.get('end');
+    
+    if (urlStart && urlEnd) {
+      return { start: urlStart, end: urlEnd };
+    }
+    
     const end = new Date();
     const start = new Date();
     start.setDate(start.getDate() - 7); // Default: last 7 days
@@ -24,9 +35,23 @@ export default function Home({ params }: Route.ComponentProps) {
       end: end.toISOString().split('T')[0]
     };
   });
-  const [view, setView] = useState<'table' | 'chart'>('table');
+  
+  // Initialize view from URL params or default to table
+  const [view, setView] = useState<'table' | 'chart'>(() => {
+    const urlView = searchParams.get('view');
+    return (urlView === 'chart' || urlView === 'table') ? urlView : 'table';
+  });
   
   const { data, loading, error, lastUpdated } = useCIData(runLimit, dateRange);
+  
+  // Update URL when date range changes
+  useEffect(() => {
+    const newParams = new URLSearchParams(searchParams);
+    newParams.set('start', dateRange.start);
+    newParams.set('end', dateRange.end);
+    newParams.set('view', view);
+    setSearchParams(newParams, { replace: true });
+  }, [dateRange, view]);
   
   const handleDateRangeChange = (start: string, end: string) => {
     setDateRange({ start, end });
@@ -40,6 +65,10 @@ export default function Home({ params }: Route.ComponentProps) {
       start: start.toISOString().split('T')[0],
       end: end.toISOString().split('T')[0]
     });
+  };
+  
+  const handleViewChange = (newView: 'table' | 'chart') => {
+    setView(newView);
   };
 
   return (
@@ -86,13 +115,13 @@ export default function Home({ params }: Route.ComponentProps) {
           
           <div className="view-toggle">
             <button 
-              onClick={() => setView('table')}
+              onClick={() => handleViewChange('table')}
               className={view === 'table' ? 'active' : ''}
             >
               Table View
             </button>
             <button 
-              onClick={() => setView('chart')}
+              onClick={() => handleViewChange('chart')}
               className={view === 'chart' ? 'active' : ''}
             >
               Chart View
