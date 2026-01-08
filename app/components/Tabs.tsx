@@ -1,4 +1,9 @@
-function Tabs({ activeTab, onTabChange }) {
+interface TabsProps {
+  activeTab: string;
+  onTabChange: (tabId: string) => void;
+}
+
+function Tabs({ activeTab, onTabChange }: TabsProps) {
   const tabs = [
     { id: 'flaky', label: 'Flaky Tests' },
     { id: 'failures', label: 'Failure Rates' },

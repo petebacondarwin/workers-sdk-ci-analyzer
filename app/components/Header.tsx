@@ -1,4 +1,14 @@
-function Header({ loading, lastUpdated, runLimit, onLimitChange, onRefresh }) {
+import React from 'react';
+
+interface HeaderProps {
+  loading: boolean;
+  lastUpdated: Date | null;
+  runLimit: number;
+  onLimitChange: (e: React.ChangeEvent<HTMLSelectElement>) => void;
+  onRefresh: () => void;
+}
+
+function Header({ loading, lastUpdated, runLimit, onLimitChange, onRefresh }: HeaderProps) {
   return (
     <header>
       <div className="controls">

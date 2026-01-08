@@ -1,4 +1,11 @@
-export function calculateFlakinessScore(test) {
+interface FlakyTest {
+  retryCount?: number;
+  occurrences?: number;
+  rerunCount?: number;
+  rerunOccurrences?: number;
+}
+
+export function calculateFlakinessScore(test: FlakyTest): number {
   let score = 0;
   
   // In-run retries contribute to flakiness
@@ -12,14 +19,14 @@ export function calculateFlakinessScore(test) {
   }
   
   // If both detection methods found issues, it's extra concerning
-  if (test.retryCount > 0 && test.rerunCount > 0) {
+  if (test.retryCount && test.retryCount > 0 && test.rerunCount && test.rerunCount > 0) {
     score += 20;
   }
   
   return Math.min(100, Math.round(score));
 }
 
-export function calculateTrend(durations) {
+export function calculateTrend(durations: number[]): number {
   if (durations.length < 2) return 0;
   
   const mid = Math.floor(durations.length / 2);
@@ -32,7 +39,7 @@ export function calculateTrend(durations) {
   return ((avgSecond - avgFirst) / avgFirst) * 100;
 }
 
-export function formatDuration(seconds) {
+export function formatDuration(seconds: number): string {
   if (seconds < 60) {
     return `${seconds.toFixed(1)}s`;
   }
