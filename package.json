@@ -7,10 +7,11 @@
     "dev": "react-router dev",
     "build": "react-router build",
     "preview": "npm run build && vite preview",
-    "deploy": "npm run build && wrangler deploy --x-provision",
-    "deploy:prod": "npm run build && wrangler deploy --x-provision --env production",
+    "deploy": "npm run build && wrangler deploy",
+    "deploy:prod": "npm run build && wrangler deploy --env production",
     "typegen": "wrangler types",
-    "trigger-cron": "wrangler deploy --x-provision && curl -X POST https://workers-sdk-ci-analyzer.YOUR_SUBDOMAIN.workers.dev/api/refresh"
+    "typecheck": "tsc -p app/tsconfig.json && tsc -p workers/tsconfig.json",
+    "trigger-cron": "wrangler deploy && curl -X POST https://workers-sdk-ci-analyzer.YOUR_SUBDOMAIN.workers.dev/api/refresh"
   },
   "keywords": [
     "cloudflare",
@@ -32,10 +33,10 @@
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "^1.19.0",
-    "@cloudflare/workers-types": "^4.20231218.0",
     "@types/react": "^18.2.43",
     "@types/react-dom": "^18.2.17",
     "@vitejs/plugin-react": "^4.2.1",
+    "typescript": "^5.9.3",
     "vite": "^6.1.0",
     "wrangler": "^4.57.0"
   }

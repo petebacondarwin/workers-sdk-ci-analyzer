@@ -15,9 +15,9 @@ This application uses Cloudflare Workers with:
 
 ## Initial Deployment
 
-### 1. Deploy with Auto-provisioning
+### 1. Deploy
 
-The `--x-provision` flag automatically creates the KV namespace:
+Wrangler automatically provisions resources like KV namespaces on deployment:
 
 ```bash
 npm run deploy
@@ -25,7 +25,7 @@ npm run deploy
 
 This will:
 - Build the React application
-- Create the KV namespace `CI_DATA_KV` if it doesn't exist
+- Automatically create the KV namespace `CI_DATA_KV` if it doesn't exist
 - Deploy the Worker with the cron trigger
 - Set up the scheduled job (runs daily at 6 AM UTC)
 
@@ -183,7 +183,7 @@ The deployment will:
 
 ### "KV namespace not found"
 
-Solution: Deploy with `--x-provision`:
+Solution: Redeploy - Wrangler will automatically provision the KV namespace:
 ```bash
 npm run deploy
 ```

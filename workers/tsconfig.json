@@ -1,17 +1,17 @@
 {
+  "extends": "../tsconfig.json",
   "compilerOptions": {
-    "isolatedModules": true,
-    "esModuleInterop": true,
-    "jsx": "react-jsx",
+    "lib": ["ES2022"],
     "module": "ESNext",
     "moduleResolution": "Bundler",
-    "resolveJsonModule": true,
     "target": "ES2022",
+    "isolatedModules": true,
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
     "strict": true,
-    "allowJs": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
-    "baseUrl": ".",
     "noEmit": true
-  }
+  },
+  "include": ["./worker-configuration.d.ts", "./**/*"],
 }

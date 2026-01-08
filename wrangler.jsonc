@@ -6,9 +6,12 @@
   "compatibility_flags": ["nodejs_compat"],
   
   // KV namespace for storing CI data
+  // Note: Wrangler automatically provisions the KV namespace on first deployment
+  // After first deployment, you can optionally add the ID for local development
   "kv_namespaces": [
     {
       "binding": "CI_DATA_KV"
+      // "id": "YOUR_KV_ID_HERE"  // Optional: Add this after first deployment for local dev
     }
   ],
   

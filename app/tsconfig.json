@@ -1,0 +1,11 @@
+{
+  "extends": "../tsconfig.json",
+  "include": ["**/*"],
+  "compilerOptions": {
+    "lib": ["DOM", "DOM.Iterable", "ES2022"],
+    // "types": ["@react-router/dev/globals"],
+    "paths": {
+      "~/*": ["./app/*"]
+    },
+  }
+}
