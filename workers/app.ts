@@ -506,13 +506,14 @@ async function handleRefresh(request: Request, env: Env) {
       const gaps = await getMissingDateRanges(env);
       
       if (gaps.length > 0) {
-        result.message += `. Found ${gaps.length} gap(s) in historical data. Backfilling...`;
+        result.message += `. Found ${gaps.length} gap(s) in historical data. Backfilling all gaps...`;
         result.gaps = gaps.map(g => ({ start: g.start.toISOString(), end: g.end.toISOString() }));
         
-        // Backfill gaps (limit to first gap to avoid timeout)
-        const firstGap = gaps[0];
-        await backfillHistoricalData(env, firstGap.start, firstGap.end);
-        result.message += ` Backfilled data from ${firstGap.start.toISOString()} to ${firstGap.end.toISOString()}`;
+        // Backfill all gaps
+        for (const gap of gaps) {
+          await backfillHistoricalData(env, gap.start, gap.end);
+        }
+        result.message += ` Backfilled ${gaps.length} gap(s).`;
       } else {
         result.message += '. No gaps found in historical data.';
       }
@@ -709,6 +710,22 @@ async function handleHistory(request: Request, env: Env) {
   }
 }
 
+// Helper function to add a date to the index
+async function addDateToIndex(env: Env, dateStr: string): Promise<void> {
+  const indexKey = 'date-index';
+  const indexData = await env.CI_DATA_KV.get(indexKey, 'json') as { dates: string[] } | null;
+  const dates = indexData?.dates || [];
+  
+  if (!dates.includes(dateStr)) {
+    dates.push(dateStr);
+    dates.sort();
+    
+    await env.CI_DATA_KV.put(indexKey, JSON.stringify({ dates: dates.slice(-180) }), {
+      expirationTtl: 60 * 60 * 24 * 180
+    });
+  }
+}
+
 // Helper function to get missing date ranges
 async function getMissingDateRanges(env: Env): Promise<Array<{ start: Date; end: Date }>> {
   const indexKey = 'date-index';
@@ -746,6 +763,24 @@ async function getMissingDateRanges(env: Env): Promise<Array<{ start: Date; end:
       });
     }
   }
+  
+  // Check for gap from last date to today
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const lastDate = dates[dates.length - 1];
+  const daysSinceLastDate = (today.getTime() - lastDate.getTime()) / (24 * 60 * 60 * 1000);
+  
+  if (daysSinceLastDate > 1) {
+    gaps.push({
+      start: new Date(lastDate.getTime() + 24 * 60 * 60 * 1000),
+      end: new Date(today.getTime() - 24 * 60 * 60 * 1000) // yesterday
+    });
+  }
+
+  console.log('Identified gaps in historical data:', gaps.map(g => ({ 
+    start: g.start.toISOString().split('T')[0], 
+    end: g.end.toISOString().split('T')[0] 
+  })));
   
   return gaps;
 }
@@ -787,6 +822,8 @@ async function backfillHistoricalData(env: Env, startDate: Date, endDate: Date) 
     
     if (runs.length === 0) {
       console.log(`No runs found for ${dateStr}`);
+      // Still record this date in the index so we don't try to backfill it again
+      await addDateToIndex(env, dateStr);
       currentDate.setDate(currentDate.getDate() + 1);
       continue;
     }
@@ -901,18 +938,7 @@ async function backfillHistoricalData(env: Env, startDate: Date, endDate: Date) 
     });
     
     // Update date index
-    const indexKey = 'date-index';
-    const indexData = await env.CI_DATA_KV.get(indexKey, 'json') as { dates: string[] } | null;
-    const dates = indexData?.dates || [];
-    
-    if (!dates.includes(dateStr)) {
-      dates.push(dateStr);
-      dates.sort();
-      
-      await env.CI_DATA_KV.put(indexKey, JSON.stringify({ dates: dates.slice(-180) }), {
-        expirationTtl: 60 * 60 * 24 * 180
-      });
-    }
+    await addDateToIndex(env, dateStr);
     
     console.log(`Stored daily snapshot for ${dateStr}`);
     
