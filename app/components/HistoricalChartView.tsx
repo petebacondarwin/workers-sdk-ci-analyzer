@@ -50,12 +50,7 @@ export default function HistoricalChartView({ dateRange }: HistoricalChartViewPr
       setError(null);
       
       try {
-        // Calculate days between start and end
-        const start = new Date(dateRange.start);
-        const end = new Date(dateRange.end);
-        const days = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
-        
-        const response = await fetch(`/api/history?days=${days}`);
+        const response = await fetch(`/api/history?startDate=${dateRange.start}&endDate=${dateRange.end}`);
         if (!response.ok) {
           throw new Error(`HTTP error! status: ${response.status}`);
         }
@@ -63,13 +58,7 @@ export default function HistoricalChartView({ dateRange }: HistoricalChartViewPr
         const result = await response.json();
         const allSnapshots = result.snapshots || [];
         
-        // Filter snapshots by date range
-        const filtered = allSnapshots.filter((s: HistoricalSnapshot) => {
-          const snapshotDate = new Date(s.date);
-          return snapshotDate >= start && snapshotDate <= end;
-        });
-        
-        setSnapshots(filtered);
+        setSnapshots(allSnapshots);
       } catch (err) {
         console.error('Error loading history:', err);
         setError(err instanceof Error ? err.message : 'Unknown error');

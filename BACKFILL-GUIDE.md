@@ -149,13 +149,13 @@ Stored daily snapshot for 2026-01-02
 
 ```bash
 # List all daily keys
-wrangler kv:key list --binding=CI_DATA_KV --prefix="daily:"
+wrangler kv key list --binding=CI_DATA_KV --prefix="daily:"
 
 # Get specific day's data
-wrangler kv:key get --binding=CI_DATA_KV "daily:2026-01-08"
+wrangler kv key get --binding=CI_DATA_KV "daily:2026-01-08"
 
 # Get date index
-wrangler kv:key get --binding=CI_DATA_KV "date-index"
+wrangler kv key get --binding=CI_DATA_KV "date-index"
 ```
 
 ## Troubleshooting
@@ -166,16 +166,16 @@ wrangler kv:key get --binding=CI_DATA_KV "date-index"
 
 ```bash
 # Get index
-wrangler kv:key get --binding=CI_DATA_KV "date-index"
+wrangler kv key get --binding=CI_DATA_KV "date-index"
 
 # Check if keys exist
-wrangler kv:key get --binding=CI_DATA_KV "daily:2026-01-08"
+wrangler kv key get --binding=CI_DATA_KV "daily:2026-01-08"
 ```
 
 If dates are in index but keys don't exist, delete and rebuild index:
 
 ```bash
-wrangler kv:key delete --binding=CI_DATA_KV "date-index"
+wrangler kv key delete --binding=CI_DATA_KV "date-index"
 curl -X POST "https://your-worker.workers.dev/api/refresh?backfill=true"
 ```
 

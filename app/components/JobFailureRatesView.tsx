@@ -164,7 +164,6 @@ export default function JobFailureRatesView({ data, loading }: JobFailureRatesVi
                         {!job.instances || job.instances.length === 0 ? (
                           <div className="empty-state">
                             <p>No instance data available for this date range.</p>
-                            <p className="note">Instance details are only available for the current data, not historical aggregations.</p>
                           </div>
                         ) : (
                           <div className="instances-list">

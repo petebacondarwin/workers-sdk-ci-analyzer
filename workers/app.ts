@@ -98,94 +98,107 @@ async function fetchAndStoreCIData(env: Env, limit: number = 100): Promise<any> 
   const sevenDaysAgo = new Date();
   sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
     
-    for (const run of runs) {
-      const jobsResponse = await fetch(run.jobs_url, {
-        headers: {
-          'Accept': 'application/vnd.github+json',
-          'User-Agent': 'Workers-SDK-CI-Analyzer',
-          ...(env.GITHUB_TOKEN ? { 'Authorization': `Bearer ${env.GITHUB_TOKEN}` } : {})
-        }
-      });
+    // Fetch jobs in parallel batches of 8 for better performance
+    const batchSize = 8;
+    for (let i = 0; i < runs.length; i += batchSize) {
+      const batch = runs.slice(i, i + batchSize);
       
-      if (!jobsResponse.ok) continue;
+      const jobsResponses = await Promise.all(
+        batch.map((run: any) => 
+          fetch(run.jobs_url, {
+            headers: {
+              'Accept': 'application/vnd.github+json',
+              'User-Agent': 'Workers-SDK-CI-Analyzer',
+              ...(env.GITHUB_TOKEN ? { 'Authorization': `Bearer ${env.GITHUB_TOKEN}` } : {})
+            }
+          }).then(res => res.ok ? res.json() : null).catch(() => null)
+        )
+      );
       
-      const jobsData = await jobsResponse.json() as any;
-      const jobs = jobsData.jobs || [];
-      const runCreatedAt = new Date(run.created_at);
-      const isInLast7Days = runCreatedAt >= sevenDaysAgo;
-      
-      for (const job of jobs) {
-        // Skip cancelled jobs
-        if (job.conclusion === 'cancelled' || job.conclusion === 'skipped') {
-          continue;
-        }
+      // Process each run's jobs
+      for (let j = 0; j < batch.length; j++) {
+        const run = batch[j];
+        const jobsData = jobsResponses[j];
         
-        const jobName = job.name;
+        if (!jobsData) continue;
         
-        // Initialize job stats if not exists
-        if (!processedData.jobStats[jobName]) {
-          processedData.jobStats[jobName] = {
-            name: jobName,
-            totalRuns: 0,
-            failures: 0,
-            successes: 0,
-            failureRate: 0,
-            last7Days: {
+        const jobs = jobsData.jobs || [];
+        const runCreatedAt = new Date(run.created_at);
+        const isInLast7Days = runCreatedAt >= sevenDaysAgo;
+        
+        for (const job of jobs) {
+          // Skip cancelled jobs
+          if (job.conclusion === 'cancelled' || job.conclusion === 'skipped') {
+            continue;
+          }
+          
+          const jobName = job.name;
+          
+          // Initialize job stats if not exists
+          if (!processedData.jobStats[jobName]) {
+            processedData.jobStats[jobName] = {
+              name: jobName,
               totalRuns: 0,
               failures: 0,
               successes: 0,
-              failureRate: 0
-            },
-            recentFailures: [],
-            instances: []
-          };
-        }
-        
-        // Overall stats
-        processedData.jobStats[jobName].totalRuns++;
-        if (job.conclusion === 'failure') {
-          processedData.jobStats[jobName].failures++;
-          processedData.jobStats[jobName].recentFailures.push({
+              failureRate: 0,
+              last7Days: {
+                totalRuns: 0,
+                failures: 0,
+                successes: 0,
+                failureRate: 0
+              },
+              recentFailures: [],
+              instances: []
+            };
+          }
+          
+          // Overall stats
+          processedData.jobStats[jobName].totalRuns++;
+          if (job.conclusion === 'failure') {
+            processedData.jobStats[jobName].failures++;
+            processedData.jobStats[jobName].recentFailures.push({
+              runId: run.id,
+              runNumber: run.run_number,
+              runUrl: run.html_url,
+              createdAt: run.created_at,
+              jobUrl: job.html_url
+            });
+          } else if (job.conclusion === 'success') {
+            processedData.jobStats[jobName].successes++;
+          }
+          
+          // Last 7 days stats
+          if (isInLast7Days) {
+            processedData.jobStats[jobName].last7Days.totalRuns++;
+            if (job.conclusion === 'failure') {
+              processedData.jobStats[jobName].last7Days.failures++;
+            } else if (job.conclusion === 'success') {
+              processedData.jobStats[jobName].last7Days.successes++;
+            }
+          }
+          
+          // Track individual job instance
+          processedData.jobStats[jobName].instances.push({
+            jobId: job.id,
             runId: run.id,
             runNumber: run.run_number,
-            runUrl: run.html_url,
+            conclusion: job.conclusion,
             createdAt: run.created_at,
-            jobUrl: job.html_url
+            jobUrl: job.html_url,
+            runUrl: run.html_url,
+            startedAt: job.started_at,
+            completedAt: job.completed_at
           });
-        } else if (job.conclusion === 'success') {
-          processedData.jobStats[jobName].successes++;
+          
+          // Track job history for trend analysis
+          processedData.jobHistory.push({
+            jobName: jobName,
+            conclusion: job.conclusion,
+            createdAt: run.created_at,
+            runNumber: run.run_number
+          });
         }
-        
-        // Last 7 days stats
-        if (isInLast7Days) {
-          processedData.jobStats[jobName].last7Days.totalRuns++;
-          if (job.conclusion === 'failure') {
-            processedData.jobStats[jobName].last7Days.failures++;
-          } else if (job.conclusion === 'success') {
-            processedData.jobStats[jobName].last7Days.successes++;
-          }
-        }
-        
-        // Track individual job instance
-        processedData.jobStats[jobName].instances.push({
-          jobId: job.id,
-          runId: run.id,
-          runNumber: run.run_number,
-          conclusion: job.conclusion,
-          createdAt: run.created_at,
-          jobUrl: job.html_url,
-          runUrl: run.html_url,
-          startedAt: job.started_at,
-          completedAt: job.completed_at
-        });
-        
-        // Track job history for trend analysis
-        processedData.jobHistory.push({
-          jobName: jobName,
-          conclusion: job.conclusion,
-          createdAt: run.created_at,
-          runNumber: run.run_number
-        });
       }
     }
     
@@ -226,6 +239,8 @@ async function fetchAndStoreCIData(env: Env, limit: number = 100): Promise<any> 
       last7DaysFailureRate: number;
       last7DaysFailures: number;
       last7DaysSuccesses: number;
+      instances: any[];
+      recentFailures: any[];
     }>
   };
   
@@ -237,7 +252,9 @@ async function fetchAndStoreCIData(env: Env, limit: number = 100): Promise<any> 
       successes: job.successes,
       last7DaysFailureRate: job.last7Days.failureRate,
       last7DaysFailures: job.last7Days.failures,
-      last7DaysSuccesses: job.last7Days.successes
+      last7DaysSuccesses: job.last7Days.successes,
+      instances: job.instances,
+      recentFailures: job.recentFailures
     };
   }
   
@@ -391,7 +408,8 @@ async function handleDateRangeQuery(env: Env, startDate: Date, endDate: Date) {
           totalFailures: 0,
           totalSuccesses: 0,
           dataPoints: 0,
-          recentFailures: []
+          recentFailures: [],
+          instances: []
         };
       }
       
@@ -399,6 +417,16 @@ async function handleDateRangeQuery(env: Env, startDate: Date, endDate: Date) {
       jobAggregates[jobName].totalFailures += jobData.failures || 0;
       jobAggregates[jobName].totalSuccesses += jobData.successes || 0;
       jobAggregates[jobName].dataPoints++;
+      
+      // Collect instances from this snapshot
+      if (jobData.instances && Array.isArray(jobData.instances)) {
+        jobAggregates[jobName].instances.push(...jobData.instances);
+      }
+      
+      // Collect recent failures
+      if (jobData.recentFailures && Array.isArray(jobData.recentFailures)) {
+        jobAggregates[jobName].recentFailures.push(...jobData.recentFailures);
+      }
     }
   }
   
@@ -408,6 +436,20 @@ async function handleDateRangeQuery(env: Env, startDate: Date, endDate: Date) {
     const agg = jobAggregates[jobName];
     const total = agg.totalFailures + agg.totalSuccesses;
     const failureRate = total > 0 ? (agg.totalFailures / total) * 100 : 0;
+    
+    // Sort instances by date (newest first) and deduplicate by jobId
+    const uniqueInstances = Array.from(
+      new Map(agg.instances.map((inst: any) => [inst.jobId, inst])).values()
+    ).sort((a: any, b: any) => 
+      new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    );
+    
+    // Sort and deduplicate recent failures, keep top 5
+    const uniqueFailures = Array.from(
+      new Map(agg.recentFailures.map((fail: any) => [fail.runId, fail])).values()
+    ).sort((a: any, b: any) => 
+      new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    ).slice(0, 5);
     
     jobStats[jobName] = {
       name: jobName,
@@ -421,8 +463,8 @@ async function handleDateRangeQuery(env: Env, startDate: Date, endDate: Date) {
         successes: agg.totalSuccesses,
         failureRate: failureRate
       },
-      recentFailures: [],
-      instances: [] // Add empty instances array for date range queries
+      recentFailures: uniqueFailures,
+      instances: uniqueInstances
     };
   }
   
@@ -579,6 +621,8 @@ async function handleJobLogs(request: Request, env: Env) {
 async function handleHistory(request: Request, env: Env) {
   try {
     const url = new URL(request.url);
+    const startDate = url.searchParams.get('startDate');
+    const endDate = url.searchParams.get('endDate');
     const days = parseInt(url.searchParams.get('days') || '30');
     const jobName = url.searchParams.get('job');
     
@@ -599,8 +643,16 @@ async function handleHistory(request: Request, env: Env) {
       });
     }
     
-    // Get the most recent dates (up to requested days)
-    const recentDates = indexData.dates.slice(-days);
+    // Filter dates by date range if provided, otherwise use days
+    let recentDates: string[];
+    if (startDate && endDate) {
+      const start = startDate.split('T')[0]; // Normalize to YYYY-MM-DD
+      const end = endDate.split('T')[0];
+      recentDates = indexData.dates.filter(date => date >= start && date <= end);
+    } else {
+      // Get the most recent dates (up to requested days)
+      recentDates = indexData.dates.slice(-days);
+    }
     
     // Fetch all daily data
     const dailyData = await Promise.all(
@@ -742,32 +794,70 @@ async function backfillHistoricalData(env: Env, startDate: Date, endDate: Date) 
     // Process the data similar to fetchAndStoreCIData
     const jobStats: any = {};
     
-    for (const run of runs) {
-      const jobsResponse = await fetch(run.jobs_url, {
-        headers: {
-          'Accept': 'application/vnd.github+json',
-          'User-Agent': 'Workers-SDK-CI-Analyzer',
-          ...(env.GITHUB_TOKEN ? { 'Authorization': `Bearer ${env.GITHUB_TOKEN}` } : {})
-        }
-      });
+    // Fetch jobs in parallel batches of 8 for better performance
+    const batchSize = 8;
+    for (let i = 0; i < runs.length; i += batchSize) {
+      const batch = runs.slice(i, i + batchSize);
       
-      if (!jobsResponse.ok) continue;
+      const jobsResponses = await Promise.all(
+        batch.map((run: any) => 
+          fetch(run.jobs_url, {
+            headers: {
+              'Accept': 'application/vnd.github+json',
+              'User-Agent': 'Workers-SDK-CI-Analyzer',
+              ...(env.GITHUB_TOKEN ? { 'Authorization': `Bearer ${env.GITHUB_TOKEN}` } : {})
+            }
+          }).then(res => res.ok ? res.json() : null).catch(() => null)
+        )
+      );
       
-      const jobsData = await jobsResponse.json() as any;
-      const jobs = jobsData.jobs || [];
-      
-      for (const job of jobs) {
-        if (job.conclusion === 'cancelled' || job.conclusion === 'skipped') continue;
+      // Process each run's jobs
+      for (let j = 0; j < batch.length; j++) {
+        const run = batch[j];
+        const jobsData = jobsResponses[j];
         
-        const jobName = job.name;
-        if (!jobStats[jobName]) {
-          jobStats[jobName] = { failures: 0, successes: 0 };
-        }
+        if (!jobsData) continue;
         
-        if (job.conclusion === 'failure') {
-          jobStats[jobName].failures++;
-        } else if (job.conclusion === 'success') {
-          jobStats[jobName].successes++;
+        const jobs = jobsData.jobs || [];
+        
+        for (const job of jobs) {
+          if (job.conclusion === 'cancelled' || job.conclusion === 'skipped') continue;
+          
+          const jobName = job.name;
+          if (!jobStats[jobName]) {
+            jobStats[jobName] = { 
+              failures: 0, 
+              successes: 0,
+              instances: [],
+              recentFailures: []
+            };
+          }
+          
+          if (job.conclusion === 'failure') {
+            jobStats[jobName].failures++;
+            jobStats[jobName].recentFailures.push({
+              runId: run.id,
+              runNumber: run.run_number,
+              runUrl: run.html_url,
+              createdAt: run.created_at,
+              jobUrl: job.html_url
+            });
+          } else if (job.conclusion === 'success') {
+            jobStats[jobName].successes++;
+          }
+          
+          // Track individual job instance
+          jobStats[jobName].instances.push({
+            jobId: job.id,
+            runId: run.id,
+            runNumber: run.run_number,
+            conclusion: job.conclusion,
+            createdAt: run.created_at,
+            jobUrl: job.html_url,
+            runUrl: run.html_url,
+            startedAt: job.started_at,
+            completedAt: job.completed_at
+          });
         }
       }
     }
@@ -784,13 +874,23 @@ async function backfillHistoricalData(env: Env, startDate: Date, endDate: Date) 
       const total = stats.failures + stats.successes;
       const failureRate = total > 0 ? (stats.failures / total) * 100 : 0;
       
+      // Sort instances by date (newest first)
+      stats.instances.sort((a: any, b: any) => 
+        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      );
+      
+      // Keep only last 5 failures
+      const recentFailures = stats.recentFailures.slice(-5);
+      
       snapshot.jobs[jobName] = {
         failureRate: failureRate,
         failures: stats.failures,
         successes: stats.successes,
         last7DaysFailureRate: failureRate, // Same as overall for backfill
         last7DaysFailures: stats.failures,
-        last7DaysSuccesses: stats.successes
+        last7DaysSuccesses: stats.successes,
+        instances: stats.instances,
+        recentFailures: recentFailures
       };
     }
     
