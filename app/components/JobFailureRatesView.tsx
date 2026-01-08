@@ -1,3 +1,17 @@
+import { useState } from 'react';
+
+interface JobInstance {
+  jobId: number;
+  runId: number;
+  runNumber: number;
+  conclusion: string;
+  createdAt: string;
+  jobUrl: string;
+  runUrl: string;
+  startedAt: string;
+  completedAt: string;
+}
+
 interface JobStats {
   name: string;
   totalRuns: number;
@@ -17,6 +31,7 @@ interface JobStats {
     createdAt: string;
     jobUrl: string;
   }>;
+  instances: JobInstance[];
 }
 
 interface JobFailureRatesViewProps {
@@ -27,6 +42,7 @@ interface JobFailureRatesViewProps {
 }
 
 export default function JobFailureRatesView({ data, loading }: JobFailureRatesViewProps) {
+  const [expandedJob, setExpandedJob] = useState<string | null>(null);
   if (loading && !data) {
     return (
       <div className="loading-container">
@@ -59,27 +75,16 @@ export default function JobFailureRatesView({ data, loading }: JobFailureRatesVi
     return rate.toFixed(1) + '%';
   };
 
+  const toggleExpanded = (jobName: string) => {
+    setExpandedJob(expandedJob === jobName ? null : jobName);
+  };
+
+  const formatDate = (dateString: string) => {
+    return new Date(dateString).toLocaleString();
+  };
+
   return (
     <div className="job-failure-rates">
-      <div className="stats-summary">
-        <div className="stat-card">
-          <h3>Total Job Types</h3>
-          <div className="stat-value">{jobsArray.length}</div>
-        </div>
-        <div className="stat-card">
-          <h3>Failing Jobs (7d)</h3>
-          <div className="stat-value">
-            {jobsArray.filter(j => j.last7Days.failureRate > 0).length}
-          </div>
-        </div>
-        <div className="stat-card">
-          <h3>Perfect Jobs (7d)</h3>
-          <div className="stat-value">
-            {jobsArray.filter(j => j.last7Days.failureRate === 0).length}
-          </div>
-        </div>
-      </div>
-
       <div className="jobs-table-container">
         <table className="jobs-table">
           <thead>
@@ -94,53 +99,101 @@ export default function JobFailureRatesView({ data, loading }: JobFailureRatesVi
           </thead>
           <tbody>
             {jobsArray.map((job) => (
-              <tr key={job.name} className={getStatusClass(job.last7Days.failureRate)}>
-                <td className="job-name">{job.name}</td>
-                <td className="failure-rate">
-                  <span className={`rate-badge ${getStatusClass(job.last7Days.failureRate)}`}>
-                    {formatPercent(job.last7Days.failureRate)}
-                  </span>
-                </td>
-                <td className="stats">
-                  <span className="failure-count">{job.last7Days.failures} failures</span>
-                  {' / '}
-                  <span className="success-count">{job.last7Days.successes} successes</span>
-                  {' / '}
-                  <span className="total-count">{job.last7Days.totalRuns} total</span>
-                </td>
-                <td className="failure-rate">
-                  <span className={`rate-badge ${getStatusClass(job.failureRate)}`}>
-                    {formatPercent(job.failureRate)}
-                  </span>
-                </td>
-                <td className="stats">
-                  <span className="failure-count">{job.failures} failures</span>
-                  {' / '}
-                  <span className="success-count">{job.successes} successes</span>
-                  {' / '}
-                  <span className="total-count">{job.totalRuns} total</span>
-                </td>
-                <td className="recent-failures">
-                  {job.recentFailures.length > 0 ? (
-                    <div className="failure-links">
-                      {job.recentFailures.map((failure, idx) => (
-                        <a
-                          key={failure.runId}
-                          href={failure.jobUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="failure-link"
-                          title={`Run #${failure.runNumber} - ${new Date(failure.createdAt).toLocaleString()}`}
-                        >
-                          #{failure.runNumber}
-                        </a>
-                      ))}
-                    </div>
-                  ) : (
-                    <span className="no-failures">None</span>
-                  )}
-                </td>
-              </tr>
+              <>
+                <tr 
+                  key={job.name} 
+                  className={`${getStatusClass(job.last7Days.failureRate)} ${expandedJob === job.name ? 'expanded' : ''}`}
+                  onClick={() => toggleExpanded(job.name)}
+                  style={{ cursor: 'pointer' }}
+                >
+                  <td className="job-name">
+                    <span className="expand-icon">{expandedJob === job.name ? '▼' : '▶'}</span>
+                    {job.name}
+                  </td>
+                  <td className="failure-rate">
+                    <span className={`rate-badge ${getStatusClass(job.last7Days.failureRate)}`}>
+                      {formatPercent(job.last7Days.failureRate)}
+                    </span>
+                  </td>
+                  <td className="stats">
+                    <span className="failure-count">{job.last7Days.failures} failures</span>
+                    {' / '}
+                    <span className="success-count">{job.last7Days.successes} successes</span>
+                    {' / '}
+                    <span className="total-count">{job.last7Days.totalRuns} total</span>
+                  </td>
+                  <td className="failure-rate">
+                    <span className={`rate-badge ${getStatusClass(job.failureRate)}`}>
+                      {formatPercent(job.failureRate)}
+                    </span>
+                  </td>
+                  <td className="stats">
+                    <span className="failure-count">{job.failures} failures</span>
+                    {' / '}
+                    <span className="success-count">{job.successes} successes</span>
+                    {' / '}
+                    <span className="total-count">{job.totalRuns} total</span>
+                  </td>
+                  <td className="recent-failures">
+                    {job.recentFailures.length > 0 ? (
+                      <div className="failure-links">
+                        {job.recentFailures.map((failure, idx) => (
+                          <a
+                            key={failure.runId}
+                            href={failure.jobUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="failure-link"
+                            title={`Run #${failure.runNumber} - ${new Date(failure.createdAt).toLocaleString()}`}
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            #{failure.runNumber}
+                          </a>
+                        ))}
+                      </div>
+                    ) : (
+                      <span className="no-failures">None</span>
+                    )}
+                  </td>
+                </tr>
+                {expandedJob === job.name && (
+                  <tr key={`${job.name}-details`} className="job-details-row">
+                    <td colSpan={6}>
+                      <div className="job-instances">
+                        <h4>Job Instances ({job.instances?.length || 0} total)</h4>
+                        {!job.instances || job.instances.length === 0 ? (
+                          <div className="empty-state">
+                            <p>No instance data available for this date range.</p>
+                            <p className="note">Instance details are only available for the current data, not historical aggregations.</p>
+                          </div>
+                        ) : (
+                          <div className="instances-list">
+                            {job.instances.map((instance) => (
+                            <div key={instance.jobId} className={`instance-item ${instance.conclusion}`}>
+                              <div className="instance-info">
+                                <span className={`instance-status ${instance.conclusion}`}>
+                                  {instance.conclusion === 'success' ? '✓' : '✗'} {instance.conclusion}
+                                </span>
+                                <span className="instance-run">Run #{instance.runNumber}</span>
+                                <span className="instance-date">{formatDate(instance.createdAt)}</span>
+                              </div>
+                              <a
+                                href={instance.jobUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="instance-link"
+                              >
+                                View Logs →
+                              </a>
+                            </div>
+                          ))}
+                        </div>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                )}
+              </>
             ))}
           </tbody>
         </table>
