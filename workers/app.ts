@@ -69,6 +69,7 @@ export default {
 
 // Function to fetch CI data from GitHub API and process it
 async function fetchAndStoreCIData(env: Env, limit: number = 100): Promise<any> {
+  console.log("Fetching CI data from GitHub API with limit:", limit);
   const runsResponse = await fetch(
     `https://api.github.com/repos/cloudflare/workers-sdk/actions/runs?per_page=${limit}&branch=changeset-release/main`,
     {
@@ -81,7 +82,7 @@ async function fetchAndStoreCIData(env: Env, limit: number = 100): Promise<any> 
   );
   
   if (!runsResponse.ok) {
-    throw new Error(`GitHub API error: ${runsResponse.status}`);
+    throw new Error(`GitHub API error: ${runsResponse.status} (${runsResponse.statusText}) - ${await runsResponse.text()}`);
   }
   
   const runsData = await runsResponse.json() as any;
