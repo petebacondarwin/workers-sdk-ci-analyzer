@@ -75,7 +75,7 @@ export default function Home({ params }: Route.ComponentProps) {
     <div className="container">
       <main>
         <div className="page-header">
-          <h1>changeset-release/main CI Health</h1>
+          <h1>workers-sdk CI Health</h1>
           <p className="subtitle">
             Monitoring CI jobs that run on Version Packages PRs. These jobs should never fail.
           </p>
