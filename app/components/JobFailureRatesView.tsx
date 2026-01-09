@@ -18,12 +18,6 @@ interface JobStats {
   failures: number;
   successes: number;
   failureRate: number;
-  last7Days: {
-    totalRuns: number;
-    failures: number;
-    successes: number;
-    failureRate: number;
-  };
   recentFailures: Array<{
     runId: number;
     runNumber: number;
@@ -60,9 +54,9 @@ export default function JobFailureRatesView({ data, loading }: JobFailureRatesVi
     );
   }
 
-  // Convert to array and sort by failure rate (7-day) descending
+  // Convert to array and sort by failure rate descending
   const jobsArray = Object.values(data.jobStats).sort((a, b) => {
-    return b.last7Days.failureRate - a.last7Days.failureRate;
+    return b.failureRate - a.failureRate;
   });
 
   const getStatusClass = (failureRate: number) => {
@@ -90,10 +84,8 @@ export default function JobFailureRatesView({ data, loading }: JobFailureRatesVi
           <thead>
             <tr>
               <th>Job Name</th>
-              <th>7-Day Failure Rate</th>
-              <th>7-Day Stats</th>
-              <th>All-Time Failure Rate</th>
-              <th>All-Time Stats</th>
+              <th>Failure Rate</th>
+              <th>Stats</th>
               <th>Recent Failures</th>
             </tr>
           </thead>
@@ -102,25 +94,13 @@ export default function JobFailureRatesView({ data, loading }: JobFailureRatesVi
               <>
                 <tr 
                   key={job.name} 
-                  className={`${getStatusClass(job.last7Days.failureRate)} ${expandedJob === job.name ? 'expanded' : ''}`}
+                  className={`${getStatusClass(job.failureRate)} ${expandedJob === job.name ? 'expanded' : ''}`}
                   onClick={() => toggleExpanded(job.name)}
                   style={{ cursor: 'pointer' }}
                 >
                   <td className="job-name">
                     <span className="expand-icon">{expandedJob === job.name ? '▼' : '▶'}</span>
                     {job.name}
-                  </td>
-                  <td className="failure-rate">
-                    <span className={`rate-badge ${getStatusClass(job.last7Days.failureRate)}`}>
-                      {formatPercent(job.last7Days.failureRate)}
-                    </span>
-                  </td>
-                  <td className="stats">
-                    <span className="failure-count">{job.last7Days.failures} failures</span>
-                    {' / '}
-                    <span className="success-count">{job.last7Days.successes} successes</span>
-                    {' / '}
-                    <span className="total-count">{job.last7Days.totalRuns} total</span>
                   </td>
                   <td className="failure-rate">
                     <span className={`rate-badge ${getStatusClass(job.failureRate)}`}>
@@ -158,7 +138,7 @@ export default function JobFailureRatesView({ data, loading }: JobFailureRatesVi
                 </tr>
                 {expandedJob === job.name && (
                   <tr key={`${job.name}-details`} className="job-details-row">
-                    <td colSpan={6}>
+                    <td colSpan={4}>
                       <div className="job-instances">
                         <h4>Job Instances ({job.instances?.length || 0} total)</h4>
                         {!job.instances || job.instances.length === 0 ? (
