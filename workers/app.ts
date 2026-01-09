@@ -82,7 +82,7 @@ async function fetchAndStoreCIData(env: Env, limit: number = 100): Promise<any> 
   );
   
   if (!runsResponse.ok) {
-    throw new Error(`GitHub API error: ${runsResponse.status} (${runsResponse.statusText}) - ${await runsResponse.text()}`);
+    throw new Error(`GitHub API error: ${runsResponse.status} (${runsResponse.statusText}) - ${await runsResponse.text()} - ${[...runsResponse.headers.entries()].map(([k,v])=>`${k}: ${v}`).join(', ')}`);
   }
   
   const runsData = await runsResponse.json() as any;

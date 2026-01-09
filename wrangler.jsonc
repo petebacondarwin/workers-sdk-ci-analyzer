@@ -10,8 +10,9 @@
   // After first deployment, you can optionally add the ID for local development
   "kv_namespaces": [
     {
-      "binding": "CI_DATA_KV"
-      // "id": "YOUR_KV_ID_HERE"  // Optional: Add this after first deployment for local dev
+      "binding": "CI_DATA_KV",
+      "remote": true,
+      "id": "f6a1d96bfec24ae281469d913f21d947"
     }
   ],
   
