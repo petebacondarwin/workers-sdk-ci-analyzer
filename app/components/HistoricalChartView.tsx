@@ -29,9 +29,6 @@ interface HistoricalSnapshot {
     failureRate: number;
     failures: number;
     successes: number;
-    last7DaysFailureRate: number;
-    last7DaysFailures: number;
-    last7DaysSuccesses: number;
   }>;
 }
 
@@ -43,6 +40,9 @@ export default function HistoricalChartView({ dateRange }: HistoricalChartViewPr
   const [snapshots, setSnapshots] = useState<HistoricalSnapshot[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [selectedJobs, setSelectedJobs] = useState<Set<string>>(new Set());
+  const [filterExpanded, setFilterExpanded] = useState(false);
+  const [initialized, setInitialized] = useState(false);
 
   useEffect(() => {
     async function fetchHistory() {
@@ -59,6 +59,16 @@ export default function HistoricalChartView({ dateRange }: HistoricalChartViewPr
         const allSnapshots = result.snapshots || [];
         
         setSnapshots(allSnapshots);
+        
+        // Initialize selected jobs to all jobs on first load
+        if (!initialized && allSnapshots.length > 0) {
+          const allJobNames = new Set<string>();
+          allSnapshots.forEach((snapshot: HistoricalSnapshot) => {
+            Object.keys(snapshot.jobs).forEach(name => allJobNames.add(name));
+          });
+          setSelectedJobs(allJobNames);
+          setInitialized(true);
+        }
       } catch (err) {
         console.error('Error loading history:', err);
         setError(err instanceof Error ? err.message : 'Unknown error');
@@ -68,7 +78,7 @@ export default function HistoricalChartView({ dateRange }: HistoricalChartViewPr
     }
     
     fetchHistory();
-  }, [dateRange]);
+  }, [dateRange, initialized]);
 
   if (loading) {
     return (
@@ -102,9 +112,32 @@ export default function HistoricalChartView({ dateRange }: HistoricalChartViewPr
     Object.keys(snapshot.jobs).forEach(name => allJobNames.add(name));
   });
   const sortedJobNames = Array.from(allJobNames).sort();
+  
+  // Filter to only selected jobs
+  const filteredJobNames = sortedJobNames.filter(name => selectedJobs.has(name));
 
-  // Prepare chart data
-  const labels = snapshots.map(s => s.date);
+  // Generate all dates in the range
+  const generateDateRange = (start: string, end: string): string[] => {
+    const dates: string[] = [];
+    const currentDate = new Date(start);
+    const endDate = new Date(end);
+    
+    while (currentDate <= endDate) {
+      dates.push(currentDate.toISOString().split('T')[0]);
+      currentDate.setDate(currentDate.getDate() + 1);
+    }
+    
+    return dates;
+  };
+
+  // Create a map of snapshots by date for quick lookup
+  const snapshotsByDate = new Map<string, HistoricalSnapshot>();
+  snapshots.forEach(snapshot => {
+    snapshotsByDate.set(snapshot.date, snapshot);
+  });
+
+  // Prepare chart data with all dates in range
+  const labels = generateDateRange(dateRange.start, dateRange.end);
   
   const colors = [
     'rgb(239, 68, 68)',   // red
@@ -121,10 +154,12 @@ export default function HistoricalChartView({ dateRange }: HistoricalChartViewPr
     'rgb(6, 182, 212)',   // cyan
   ];
 
-  const datasets = sortedJobNames.map((jobName, index) => {
-    const data = snapshots.map(snapshot => {
+  const datasets = filteredJobNames.map((jobName, index) => {
+    const data = labels.map(date => {
+      const snapshot = snapshotsByDate.get(date);
+      if (!snapshot) return null;
       const jobData = snapshot.jobs[jobName];
-      return jobData ? jobData.last7DaysFailureRate : null;
+      return jobData ? jobData.failureRate : null;
     });
 
     return {
@@ -136,7 +171,7 @@ export default function HistoricalChartView({ dateRange }: HistoricalChartViewPr
       tension: 0.3,
       spanGaps: true,
       pointRadius: 3,
-      pointHoverRadius: 5
+      pointHoverRadius: 6
     };
   });
 
@@ -149,25 +184,16 @@ export default function HistoricalChartView({ dateRange }: HistoricalChartViewPr
     responsive: true,
     maintainAspectRatio: false,
     interaction: {
-      mode: 'index' as const,
-      intersect: false,
+      mode: 'nearest' as const,
+      intersect: true,
     },
     plugins: {
       legend: {
-        position: 'right' as const,
-        labels: {
-          color: '#ffffff',
-          padding: 10,
-          font: {
-            size: 11
-          },
-          boxWidth: 20,
-          boxHeight: 2
-        }
+        display: false // Hide legend since we have the filter panel
       },
       title: {
         display: true,
-        text: '7-Day Rolling Average Failure Rate Over Time',
+        text: 'Failure Rate Over Time',
         color: '#ffffff',
         font: {
           size: 18,
@@ -180,15 +206,13 @@ export default function HistoricalChartView({ dateRange }: HistoricalChartViewPr
       },
       tooltip: {
         callbacks: {
+          title: function(contexts) {
+            return contexts[0]?.label || '';
+          },
           label: function(context) {
-            let label = context.dataset.label || '';
-            if (label) {
-              label += ': ';
-            }
-            if (context.parsed.y !== null) {
-              label += context.parsed.y.toFixed(1) + '%';
-            }
-            return label;
+            const jobName = context.dataset.label || '';
+            const value = context.parsed.y !== null ? context.parsed.y.toFixed(1) + '%' : 'N/A';
+            return `${jobName}: ${value}`;
           }
         }
       }
@@ -236,8 +260,60 @@ export default function HistoricalChartView({ dateRange }: HistoricalChartViewPr
     }
   };
 
+  const toggleJob = (jobName: string) => {
+    const newSelected = new Set(selectedJobs);
+    if (newSelected.has(jobName)) {
+      newSelected.delete(jobName);
+    } else {
+      newSelected.add(jobName);
+    }
+    setSelectedJobs(newSelected);
+  };
+
+  const selectAll = () => {
+    setSelectedJobs(new Set(sortedJobNames));
+  };
+
+  const selectNone = () => {
+    setSelectedJobs(new Set());
+  };
+
   return (
     <div className="historical-chart-view">
+      <div className="job-filter-section">
+        <button 
+          className="filter-toggle"
+          onClick={() => setFilterExpanded(!filterExpanded)}
+        >
+          {filterExpanded ? '▼' : '▶'} Filter Jobs ({selectedJobs.size}/{sortedJobNames.length} selected)
+        </button>
+        
+        {filterExpanded && (
+          <div className="job-filter-panel">
+            <div className="filter-actions">
+              <button onClick={selectAll}>Select All</button>
+              <button onClick={selectNone}>Select None</button>
+            </div>
+            <div className="job-checkboxes">
+              {sortedJobNames.map((jobName, index) => (
+                <label key={jobName} className="job-checkbox">
+                  <input
+                    type="checkbox"
+                    checked={selectedJobs.has(jobName)}
+                    onChange={() => toggleJob(jobName)}
+                  />
+                  <span 
+                    className="job-color-indicator" 
+                    style={{ backgroundColor: colors[index % colors.length] }}
+                  />
+                  {jobName}
+                </label>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
       <div className="chart-container-wrapper">
         <div className="chart-container" style={{ height: '600px' }}>
           <Line data={chartData} options={options} />
@@ -246,13 +322,10 @@ export default function HistoricalChartView({ dateRange }: HistoricalChartViewPr
 
       <div className="chart-info">
         <p>
-          Showing {snapshots.length} data point{snapshots.length !== 1 ? 's' : ''} from{' '}
-          {snapshots[0]?.date} to {snapshots[snapshots.length - 1]?.date}
+          Showing {labels.length} date{labels.length !== 1 ? 's' : ''} from{' '}
+          {dateRange.start} to {dateRange.end} ({snapshots.length} with data)
         </p>
-        <p>Displaying {sortedJobNames.length} job{sortedJobNames.length !== 1 ? 's' : ''}</p>
-        <p className="note">
-          Each line represents the 7-day rolling average failure rate for a specific job.
-        </p>
+        <p>Displaying {filteredJobNames.length} of {sortedJobNames.length} jobs</p>
       </div>
     </div>
   );
