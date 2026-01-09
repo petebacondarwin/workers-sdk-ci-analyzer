@@ -148,6 +148,11 @@ export default function Home({ params }: Route.ComponentProps) {
           lastUpdated={lastUpdated}
         />
         <p>Data sourced from GitHub Actions API • Branch: changeset-release/main</p>
+        <p>
+          <a href="https://github.com/petebacondarwin/workers-sdk-ci-analyzer" target="_blank" rel="noopener noreferrer">
+            View source on GitHub
+          </a>
+        </p>
       </footer>
     </div>
   );
