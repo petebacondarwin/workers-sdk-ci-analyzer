@@ -69,7 +69,7 @@ export default {
 
 // Function to fetch CI data from GitHub API and process it
 async function fetchAndStoreCIData(env: Env, limit: number = 100): Promise<any> {
-  console.log("Fetching CI data from GitHub API with limit:", limit);
+  console.log("Fetching CI data from GitHub API with limit:", limit, env.GITHUB_TOKEN ? "(with token)" : "(no token)");
   const runsResponse = await fetch(
     `https://api.github.com/repos/cloudflare/workers-sdk/actions/runs?per_page=${limit}&branch=changeset-release/main`,
     {
