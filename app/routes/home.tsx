@@ -135,6 +135,29 @@ export default function Home({ params }: Route.ComponentProps) {
           </div>
         )}
 
+        {data && data.jobStats && (
+          <div className="overall-stats">
+            {(() => {
+              const jobs = Object.values(data.jobStats);
+              const totalFailures = jobs.reduce((sum, job: any) => sum + job.failures, 0);
+              const totalSuccesses = jobs.reduce((sum, job: any) => sum + job.successes, 0);
+              const totalRuns = totalFailures + totalSuccesses;
+              const overallFailureRate = totalRuns > 0 ? (totalFailures / totalRuns) * 100 : 0;
+              
+              return (
+                <>
+                  <span className={`overall-rate ${overallFailureRate === 0 ? 'success' : overallFailureRate < 5 ? 'warning' : 'danger'}`}>
+                    {overallFailureRate.toFixed(1)}% failure rate
+                  </span>
+                  <span className="overall-detail">
+                    {totalFailures} failures / {totalSuccesses} successes / {totalRuns} total runs across {jobs.length} job types
+                  </span>
+                </>
+              );
+            })()}
+          </div>
+        )}
+
         {view === 'table' ? (
           <JobFailureRatesView data={data} loading={loading} />
         ) : (
