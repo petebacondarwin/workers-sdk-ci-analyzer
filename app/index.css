@@ -396,6 +396,55 @@ footer p {
   color: var(--primary-color);
 }
 
+/* Aggregate Stats for Table View */
+.aggregate-stats {
+  display: flex;
+  gap: 15px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+
+.aggregate-stats .stat-card {
+  flex: 1;
+  min-width: 150px;
+  padding: 15px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.aggregate-stats .stat-label {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.aggregate-stats .stat-value {
+  font-size: 1.8rem;
+  font-weight: 700;
+}
+
+.aggregate-stats .stat-value.status-success {
+  color: var(--success-color);
+}
+
+.aggregate-stats .stat-value.status-warning {
+  color: var(--warning-color);
+}
+
+.aggregate-stats .stat-value.status-danger {
+  color: var(--danger-color);
+}
+
+.aggregate-stats .stat-value.failure-count {
+  color: var(--danger-color);
+}
+
+.aggregate-stats .stat-value.success-count {
+  color: var(--success-color);
+}
+
 .jobs-table-container {
   overflow-x: auto;
   background-color: var(--surface-color);

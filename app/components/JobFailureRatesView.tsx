@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 
 interface JobInstance {
   jobId: number;
@@ -37,6 +37,19 @@ interface JobFailureRatesViewProps {
 
 export default function JobFailureRatesView({ data, loading }: JobFailureRatesViewProps) {
   const [expandedJob, setExpandedJob] = useState<string | null>(null);
+  const [selectedJobs, setSelectedJobs] = useState<Set<string>>(new Set());
+  const [filterExpanded, setFilterExpanded] = useState(false);
+  const [initialized, setInitialized] = useState(false);
+
+  // Initialize selected jobs to all jobs when data loads
+  useEffect(() => {
+    if (!initialized && data?.jobStats) {
+      const allJobNames = new Set(Object.keys(data.jobStats));
+      setSelectedJobs(allJobNames);
+      setInitialized(true);
+    }
+  }, [data, initialized]);
+
   if (loading && !data) {
     return (
       <div className="loading-container">
@@ -54,10 +67,45 @@ export default function JobFailureRatesView({ data, loading }: JobFailureRatesVi
     );
   }
 
-  // Convert to array and sort by failure rate descending
-  const jobsArray = Object.values(data.jobStats).sort((a, b) => {
-    return b.failureRate - a.failureRate;
-  });
+  // Get all job names sorted alphabetically for the filter panel
+  const allJobNames = Object.keys(data.jobStats).sort();
+
+  // Convert to array, filter by selected jobs, and sort by failure rate descending
+  const jobsArray = Object.values(data.jobStats)
+    .filter(job => selectedJobs.has(job.name))
+    .sort((a, b) => b.failureRate - a.failureRate);
+
+  // Compute aggregate stats based on filtered jobs only
+  const aggregateStats = jobsArray.reduce(
+    (acc, job) => ({
+      totalRuns: acc.totalRuns + job.totalRuns,
+      failures: acc.failures + job.failures,
+      successes: acc.successes + job.successes,
+    }),
+    { totalRuns: 0, failures: 0, successes: 0 }
+  );
+  const overallFailureRate = aggregateStats.totalRuns > 0 
+    ? (aggregateStats.failures / aggregateStats.totalRuns) * 100 
+    : 0;
+
+  // Filter helper functions
+  const toggleJob = (jobName: string) => {
+    const newSelected = new Set(selectedJobs);
+    if (newSelected.has(jobName)) {
+      newSelected.delete(jobName);
+    } else {
+      newSelected.add(jobName);
+    }
+    setSelectedJobs(newSelected);
+  };
+
+  const selectAll = () => {
+    setSelectedJobs(new Set(allJobNames));
+  };
+
+  const selectNone = () => {
+    setSelectedJobs(new Set());
+  };
 
   const getStatusClass = (failureRate: number) => {
     if (failureRate === 0) return 'status-success';
@@ -79,6 +127,57 @@ export default function JobFailureRatesView({ data, loading }: JobFailureRatesVi
 
   return (
     <div className="job-failure-rates">
+      <div className="job-filter-section">
+        <button 
+          className="filter-toggle"
+          onClick={() => setFilterExpanded(!filterExpanded)}
+        >
+          {filterExpanded ? '▼' : '▶'} Filter Jobs ({selectedJobs.size}/{allJobNames.length} selected)
+        </button>
+        
+        {filterExpanded && (
+          <div className="job-filter-panel">
+            <div className="filter-actions">
+              <button onClick={selectAll}>Select All</button>
+              <button onClick={selectNone}>Select None</button>
+            </div>
+            <div className="job-checkboxes">
+              {allJobNames.map((jobName) => (
+                <label key={jobName} className="job-checkbox">
+                  <input
+                    type="checkbox"
+                    checked={selectedJobs.has(jobName)}
+                    onChange={() => toggleJob(jobName)}
+                  />
+                  {jobName}
+                </label>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="aggregate-stats">
+        <div className="stat-card">
+          <span className="stat-label">Overall Failure Rate</span>
+          <span className={`stat-value ${getStatusClass(overallFailureRate)}`}>
+            {formatPercent(overallFailureRate)}
+          </span>
+        </div>
+        <div className="stat-card">
+          <span className="stat-label">Total Runs</span>
+          <span className="stat-value">{aggregateStats.totalRuns.toLocaleString()}</span>
+        </div>
+        <div className="stat-card">
+          <span className="stat-label">Failures</span>
+          <span className="stat-value failure-count">{aggregateStats.failures.toLocaleString()}</span>
+        </div>
+        <div className="stat-card">
+          <span className="stat-label">Successes</span>
+          <span className="stat-value success-count">{aggregateStats.successes.toLocaleString()}</span>
+        </div>
+      </div>
+
       <div className="jobs-table-container">
         <table className="jobs-table">
           <thead>
