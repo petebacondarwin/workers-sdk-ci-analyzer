@@ -73,6 +73,11 @@ export default {
       return handleIssueTriage(request, env);
     }
     
+    // PR health endpoint
+    if (url.pathname === '/api/pr-health') {
+      return handlePRHealth(request, env);
+    }
+    
     // All other requests go to React Router
     return requestHandler(request, {
       cloudflare: { env, ctx },
@@ -1065,6 +1070,7 @@ interface GitHubItem {
     name: string;
     color: string;
   }>;
+  commentCount: number;
 }
 
 // Metadata stored alongside items
@@ -1095,6 +1101,9 @@ interface GitHubGraphQLIssueNode {
       color: string;
     }>;
   };
+  comments: {
+    totalCount: number;
+  };
 }
 
 interface GitHubGraphQLPRNode {
@@ -1115,6 +1124,9 @@ interface GitHubGraphQLPRNode {
       name: string;
       color: string;
     }>;
+  };
+  comments: {
+    totalCount: number;
   };
 }
 
@@ -1214,6 +1226,9 @@ function getIssuesQuery(filterBySince?: string): string {
                 color
               }
             }
+            comments {
+              totalCount
+            }
           }
         }
       }
@@ -1252,6 +1267,9 @@ function getPRsQuery(): string {
                 name
                 color
               }
+            }
+            comments {
+              totalCount
             }
           }
         }
@@ -1293,6 +1311,9 @@ function getPRsUpdatedQuery(): string {
                 color
               }
             }
+            comments {
+              totalCount
+            }
           }
         }
       }
@@ -1310,7 +1331,8 @@ function transformIssueNode(node: GitHubGraphQLIssueNode): GitHubItem {
     closedAt: node.closedAt,
     updatedAt: node.updatedAt,
     author: node.author,
-    labels: node.labels.nodes
+    labels: node.labels.nodes,
+    commentCount: node.comments.totalCount
   };
 }
 
@@ -1333,7 +1355,8 @@ function transformPRNode(node: GitHubGraphQLPRNode): GitHubItem {
     closedAt: node.closedAt || node.mergedAt,
     updatedAt: node.updatedAt,
     author: node.author,
-    labels: node.labels.nodes
+    labels: node.labels.nodes,
+    commentCount: node.comments.totalCount
   };
 }
 
@@ -2329,6 +2352,143 @@ async function handleIssueTriage(request: Request, env: Env): Promise<Response> 
     });
   } catch (error: any) {
     console.error('Error fetching issue triage data:', error);
+    return new Response(JSON.stringify({ error: error.message }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+    });
+  }
+}
+
+// ============================================================================
+// PR Health
+// ============================================================================
+
+interface PRHealthItem {
+  number: number;
+  title: string;
+  state: 'open' | 'closed' | 'merged';
+  createdAt: string;
+  updatedAt: string;
+  author: {
+    login: string;
+    avatarUrl: string;
+  } | null;
+  labels: Array<{
+    name: string;
+    color: string;
+  }>;
+  commentCount: number;
+  ageDays: number;
+  staleDays: number;
+}
+
+// Handle PR health API: GET /api/pr-health?state=open|all
+async function handlePRHealth(request: Request, env: Env): Promise<Response> {
+  try {
+    const url = new URL(request.url);
+    const stateFilter = url.searchParams.get('state') || 'open';
+    const sortBy = url.searchParams.get('sort') || 'stale'; // stale, age, comments
+    const order = url.searchParams.get('order') || 'desc';
+    
+    // Load all GitHub items from KV
+    const items = await loadGitHubItemsFromKV(env);
+    const meta = await loadGitHubItemsMetaFromKV(env);
+    
+    if (!meta || Object.keys(items).length === 0) {
+      return new Response(JSON.stringify({
+        prs: [],
+        message: 'No GitHub data available. Please trigger a sync first.',
+        needsSync: true
+      }), {
+        headers: {
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': '*',
+          'Cache-Control': 'public, max-age=300'
+        }
+      });
+    }
+    
+    const now = Date.now();
+    
+    // Filter to PRs and calculate health metrics
+    let prs: PRHealthItem[] = Object.values(items)
+      .filter(item => {
+        if (item.type !== 'pr') return false;
+        if (stateFilter === 'open') return item.state === 'open';
+        return true;
+      })
+      .map(item => {
+        const createdAt = new Date(item.createdAt).getTime();
+        const updatedAt = new Date(item.updatedAt).getTime();
+        const ageDays = Math.floor((now - createdAt) / (1000 * 60 * 60 * 24));
+        const staleDays = Math.floor((now - updatedAt) / (1000 * 60 * 60 * 24));
+        
+        return {
+          number: item.number,
+          title: item.title,
+          state: item.state,
+          createdAt: item.createdAt,
+          updatedAt: item.updatedAt,
+          author: item.author,
+          labels: item.labels,
+          commentCount: item.commentCount || 0,
+          ageDays,
+          staleDays
+        };
+      });
+    
+    // Sort
+    prs.sort((a, b) => {
+      let comparison = 0;
+      switch (sortBy) {
+        case 'stale':
+          comparison = a.staleDays - b.staleDays;
+          break;
+        case 'age':
+          comparison = a.ageDays - b.ageDays;
+          break;
+        case 'comments':
+          comparison = (a.commentCount || 0) - (b.commentCount || 0);
+          break;
+        default:
+          comparison = a.staleDays - b.staleDays;
+      }
+      return order === 'desc' ? -comparison : comparison;
+    });
+    
+    // Limit to top 100
+    const limitedPrs = prs.slice(0, 100);
+    
+    // Calculate summary stats
+    const totalPrs = prs.length;
+    const avgAge = prs.length > 0 
+      ? Math.round(prs.reduce((sum, pr) => sum + pr.ageDays, 0) / prs.length)
+      : 0;
+    const avgStale = prs.length > 0
+      ? Math.round(prs.reduce((sum, pr) => sum + pr.staleDays, 0) / prs.length)
+      : 0;
+    const staleCount = prs.filter(pr => pr.staleDays > 14).length;
+    const veryStaleCount = prs.filter(pr => pr.staleDays > 30).length;
+    
+    return new Response(JSON.stringify({
+      prs: limitedPrs,
+      total: totalPrs,
+      stats: {
+        avgAgeDays: avgAge,
+        avgStaleDays: avgStale,
+        staleCount, // > 14 days
+        veryStaleCount // > 30 days
+      },
+      lastSync: meta.lastSync
+    }), {
+      headers: {
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*',
+        'Cache-Control': 'public, max-age=300'
+      }
+    });
+  } catch (error: any) {
+    console.error('Error fetching PR health data:', error);
     return new Response(JSON.stringify({ error: error.message }), {
       status: 500,
       headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }

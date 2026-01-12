@@ -43,6 +43,12 @@ export default function MainLayout() {
             >
               Issue Triage
             </NavLink>
+            <NavLink
+              to="/pr-health"
+              className={({ isActive }) => `nav-tab ${isActive ? 'active' : ''}`}
+            >
+              PR Health
+            </NavLink>
           </nav>
         </div>
       </header>

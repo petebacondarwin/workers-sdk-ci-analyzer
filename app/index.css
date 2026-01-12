@@ -1943,3 +1943,304 @@ footer p {
     font-size: 0.75rem;
   }
 }
+
+/* ============================================================================
+   PR Health Styles
+   ============================================================================ */
+
+.pr-health-controls {
+  margin-bottom: 20px;
+  padding: 15px;
+  background-color: var(--surface-color);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+}
+
+.filter-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.filter-group label {
+  font-size: 0.9rem;
+  color: var(--text-muted);
+}
+
+.filter-select {
+  padding: 8px 12px;
+  background-color: var(--bg-color);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  color: var(--text-color);
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.filter-select:focus {
+  outline: none;
+  border-color: var(--primary-color);
+}
+
+.pr-health-container {
+  margin-bottom: 30px;
+}
+
+.pr-health-empty {
+  text-align: center;
+  padding: 40px;
+  color: var(--text-muted);
+  background-color: var(--surface-color);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+}
+
+/* Stats Cards */
+.pr-health-stats {
+  display: flex;
+  gap: 15px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+
+.stat-card {
+  flex: 1;
+  min-width: 120px;
+  padding: 15px 20px;
+  background-color: var(--surface-color);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  text-align: center;
+}
+
+.stat-card.warning {
+  border-color: var(--warning-color);
+  background-color: rgba(234, 179, 8, 0.1);
+}
+
+.stat-card.critical {
+  border-color: var(--danger-color);
+  background-color: rgba(239, 68, 68, 0.1);
+}
+
+.stat-value {
+  display: block;
+  font-size: 1.8rem;
+  font-weight: 700;
+  color: var(--text-color);
+}
+
+.stat-card.warning .stat-value {
+  color: var(--warning-color);
+}
+
+.stat-card.critical .stat-value {
+  color: var(--danger-color);
+}
+
+.stat-label {
+  display: block;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
+/* PR Health Table */
+.pr-health-table-wrapper {
+  overflow-x: auto;
+  overflow-y: auto;
+  max-height: 600px;
+  background-color: var(--surface-color);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+}
+
+.pr-health-table {
+  width: 100%;
+  min-width: 800px;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.pr-health-table thead {
+  background-color: var(--secondary-color);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.pr-health-table th {
+  padding: 12px 15px;
+  text-align: left;
+  font-weight: 600;
+  color: var(--text-color);
+  border-bottom: 2px solid var(--border-color);
+  white-space: nowrap;
+}
+
+.pr-health-table th.center {
+  text-align: center;
+}
+
+.pr-health-table th.sortable {
+  cursor: pointer;
+  user-select: none;
+}
+
+.pr-health-table th.sortable:hover {
+  background-color: var(--border-color);
+}
+
+.pr-health-table .pr-col {
+  min-width: 350px;
+}
+
+.pr-health-table .author-col {
+  min-width: 140px;
+}
+
+.pr-health-table td {
+  padding: 12px 15px;
+  border-bottom: 1px solid var(--border-color);
+  vertical-align: middle;
+}
+
+.pr-health-table tbody tr:hover {
+  background-color: rgba(246, 130, 31, 0.05);
+}
+
+.pr-health-table td.center {
+  text-align: center;
+}
+
+/* PR Cell */
+.pr-info {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.pr-link {
+  font-weight: 500;
+  color: var(--link-color);
+  text-decoration: none;
+  line-height: 1.4;
+}
+
+.pr-link:hover {
+  text-decoration: underline;
+}
+
+.pr-labels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.pr-label {
+  padding: 2px 6px;
+  font-size: 0.7rem;
+  border-radius: 10px;
+  border-width: 1px;
+  border-style: solid;
+  white-space: nowrap;
+}
+
+.pr-label-more {
+  padding: 2px 6px;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+}
+
+/* Staleness Badge */
+.staleness-badge, .age-badge {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 0.8rem;
+  font-weight: 500;
+}
+
+.staleness-fresh {
+  background-color: rgba(34, 197, 94, 0.2);
+  color: var(--success-color);
+}
+
+.staleness-moderate {
+  background-color: rgba(59, 130, 246, 0.2);
+  color: #3b82f6;
+}
+
+.staleness-warning {
+  background-color: rgba(234, 179, 8, 0.2);
+  color: var(--warning-color);
+}
+
+.staleness-critical {
+  background-color: rgba(239, 68, 68, 0.2);
+  color: var(--danger-color);
+}
+
+/* Age Badge */
+.age-new {
+  background-color: rgba(34, 197, 94, 0.2);
+  color: var(--success-color);
+}
+
+.age-moderate {
+  background-color: rgba(59, 130, 246, 0.2);
+  color: #3b82f6;
+}
+
+.age-old {
+  background-color: rgba(234, 179, 8, 0.2);
+  color: var(--warning-color);
+}
+
+.age-ancient {
+  background-color: rgba(239, 68, 68, 0.2);
+  color: var(--danger-color);
+}
+
+/* Comment Count */
+.comment-count {
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+/* Author Cell */
+.author-cell {
+  white-space: nowrap;
+}
+
+.pr-author {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pr-avatar {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+}
+
+/* PR Health Legend */
+.pr-health-legend {
+  margin-top: 15px;
+  padding: 10px 15px;
+  background-color: var(--surface-color);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+}
+
+/* Responsive adjustments for PR health */
+@media (max-width: 768px) {
+  .pr-health-stats {
+    flex-direction: column;
+  }
+  
+  .stat-card {
+    min-width: 100%;
+  }
+}
