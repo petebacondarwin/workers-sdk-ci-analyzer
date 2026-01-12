@@ -68,6 +68,11 @@ export default {
       return handleBusFactor(request, env);
     }
     
+    // Issue triage endpoint
+    if (url.pathname === '/api/issue-triage') {
+      return handleIssueTriage(request, env);
+    }
+    
     // All other requests go to React Router
     return requestHandler(request, {
       cloudflare: { env, ctx },
@@ -2220,6 +2225,110 @@ async function handleBusFactor(request: Request, env: Env): Promise<Response> {
     });
   } catch (error: any) {
     console.error('Error analyzing bus factor:', error);
+    return new Response(JSON.stringify({ error: error.message }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+    });
+  }
+}
+
+// ============================================================================
+// Issue Triage
+// ============================================================================
+
+// Labels that indicate an issue is blocked/waiting (not untriaged)
+const BLOCKING_LABELS = [
+  'awaiting reporter response',
+  'needs reproduction',
+  'awaiting Cloudflare response',
+  'blocked',
+];
+
+// Labels that indicate an issue is awaiting dev attention
+const AWAITING_DEV_LABELS = [
+  'awaiting reporter response',
+  'needs reproduction',
+  'awaiting dev response',
+];
+
+// Handle issue triage API: GET /api/issue-triage
+async function handleIssueTriage(request: Request, env: Env): Promise<Response> {
+  try {
+    // Load all GitHub items from KV
+    const items = await loadGitHubItemsFromKV(env);
+    const meta = await loadGitHubItemsMetaFromKV(env);
+    
+    if (!meta || Object.keys(items).length === 0) {
+      return new Response(JSON.stringify({
+        untriaged: [],
+        awaitingDev: [],
+        message: 'No GitHub data available. Please trigger a sync first.',
+        needsSync: true
+      }), {
+        headers: {
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': '*',
+          'Cache-Control': 'public, max-age=300'
+        }
+      });
+    }
+    
+    // Filter to only open issues (not PRs)
+    const openIssues = Object.values(items).filter(
+      item => item.type === 'issue' && item.state === 'open'
+    );
+    
+    // Categorize issues
+    const untriaged: GitHubItem[] = [];
+    const awaitingDev: GitHubItem[] = [];
+    
+    for (const issue of openIssues) {
+      const labelNames = issue.labels.map(l => l.name.toLowerCase());
+      
+      // Check if issue has any blocking labels
+      const hasBlockingLabel = BLOCKING_LABELS.some(
+        blockingLabel => labelNames.includes(blockingLabel.toLowerCase())
+      );
+      
+      // Check if issue has any awaiting dev labels
+      const hasAwaitingDevLabel = AWAITING_DEV_LABELS.some(
+        awaitingLabel => labelNames.includes(awaitingLabel.toLowerCase())
+      );
+      
+      if (hasAwaitingDevLabel) {
+        awaitingDev.push(issue);
+      } else if (!hasBlockingLabel) {
+        untriaged.push(issue);
+      }
+    }
+    
+    // Sort by created date (newest first)
+    untriaged.sort((a, b) => 
+      new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    );
+    awaitingDev.sort((a, b) => 
+      new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+    );
+    
+    // Limit to top 100 each
+    const limitedUntriaged = untriaged.slice(0, 100);
+    const limitedAwaitingDev = awaitingDev.slice(0, 100);
+    
+    return new Response(JSON.stringify({
+      untriaged: limitedUntriaged,
+      awaitingDev: limitedAwaitingDev,
+      totalUntriaged: untriaged.length,
+      totalAwaitingDev: awaitingDev.length,
+      lastSync: meta.lastSync
+    }), {
+      headers: {
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*',
+        'Cache-Control': 'public, max-age=300'
+      }
+    });
+  } catch (error: any) {
+    console.error('Error fetching issue triage data:', error);
     return new Response(JSON.stringify({ error: error.message }), {
       status: 500,
       headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }

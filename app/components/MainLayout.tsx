@@ -37,6 +37,12 @@ export default function MainLayout() {
             >
               Bus Factor
             </NavLink>
+            <NavLink
+              to="/issue-triage"
+              className={({ isActive }) => `nav-tab ${isActive ? 'active' : ''}`}
+            >
+              Issue Triage
+            </NavLink>
           </nav>
         </div>
       </header>

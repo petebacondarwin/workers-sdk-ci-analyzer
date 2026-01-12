@@ -29,12 +29,15 @@ type Pages = {
   "/bus-factor": {
     params: {};
   };
+  "/issue-triage": {
+    params: {};
+  };
 };
 
 type RouteFiles = {
   "root.tsx": {
     id: "root";
-    page: "/" | "/ci-flakes" | "/issues" | "/prs" | "/issue-chart" | "/bus-factor";
+    page: "/" | "/ci-flakes" | "/issues" | "/prs" | "/issue-chart" | "/bus-factor" | "/issue-triage";
   };
   "routes/home.tsx": {
     id: "routes/home";
@@ -42,7 +45,7 @@ type RouteFiles = {
   };
   "routes/layout.tsx": {
     id: "routes/layout";
-    page: "/ci-flakes" | "/issues" | "/prs" | "/issue-chart" | "/bus-factor";
+    page: "/ci-flakes" | "/issues" | "/prs" | "/issue-chart" | "/bus-factor" | "/issue-triage";
   };
   "routes/ci-flakes.tsx": {
     id: "routes/ci-flakes";
@@ -64,6 +67,10 @@ type RouteFiles = {
     id: "routes/bus-factor";
     page: "/bus-factor";
   };
+  "routes/issue-triage.tsx": {
+    id: "routes/issue-triage";
+    page: "/issue-triage";
+  };
 };
 
 type RouteModules = {
@@ -75,4 +82,5 @@ type RouteModules = {
   "routes/prs": typeof import("./app/routes/prs.tsx");
   "routes/issue-chart": typeof import("./app/routes/issue-chart.tsx");
   "routes/bus-factor": typeof import("./app/routes/bus-factor.tsx");
+  "routes/issue-triage": typeof import("./app/routes/issue-triage.tsx");
 };

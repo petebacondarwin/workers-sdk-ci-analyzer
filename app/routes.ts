@@ -11,5 +11,6 @@ export default [
     route("prs", "routes/prs.tsx"),
     route("issue-chart", "routes/issue-chart.tsx"),
     route("bus-factor", "routes/bus-factor.tsx"),
+    route("issue-triage", "routes/issue-triage.tsx"),
   ]),
 ] satisfies RouteConfig;
