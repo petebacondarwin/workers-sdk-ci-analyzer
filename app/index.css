@@ -1182,6 +1182,32 @@ footer p {
   cursor: not-allowed;
 }
 
+.sync-button.secondary {
+  background-color: var(--secondary-color);
+  border: 1px solid var(--border-color);
+}
+
+.sync-button.secondary:hover:not(:disabled) {
+  background-color: var(--border-color);
+}
+
+.footer-buttons {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  margin: 15px 0;
+}
+
+.error-text {
+  color: var(--danger-color);
+  font-weight: 500;
+}
+
+.success-text {
+  color: var(--success-color);
+  font-weight: 500;
+}
+
 /* Open Items Chart View */
 .open-items-chart-view {
   margin-bottom: 40px;
@@ -1273,5 +1299,463 @@ footer p {
   .view-toggle {
     width: 100%;
     justify-content: center;
+  }
+}
+
+/* ============================================================================
+   Issue Label Chart Styles
+   ============================================================================ */
+
+.issue-label-chart {
+  margin-bottom: 40px;
+}
+
+.chart-layout {
+  display: flex;
+  gap: 20px;
+  min-height: 500px;
+}
+
+/* Label Filter Sidebar */
+.label-filter-sidebar {
+  width: 250px;
+  flex-shrink: 0;
+  background-color: var(--surface-color);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 15px;
+  display: flex;
+  flex-direction: column;
+}
+
+.filter-search {
+  position: relative;
+  margin-bottom: 15px;
+}
+
+.filter-search-input {
+  width: 100%;
+  padding: 8px 30px 8px 12px;
+  background-color: var(--bg-color);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  color: var(--text-color);
+  font-size: 0.9rem;
+}
+
+.filter-search-input:focus {
+  outline: none;
+  border-color: var(--primary-color);
+}
+
+.filter-search-input::placeholder {
+  color: var(--text-muted);
+}
+
+.filter-search-clear {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 0.9rem;
+  padding: 2px 6px;
+}
+
+.filter-search-clear:hover {
+  color: var(--text-color);
+}
+
+.filter-buttons {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.filter-btn {
+  flex: 1;
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.filter-btn-primary {
+  background-color: var(--primary-color);
+  color: white;
+  border-color: var(--primary-color);
+}
+
+.filter-btn-primary:hover {
+  background-color: #e57314;
+}
+
+.filter-btn-secondary {
+  background-color: var(--bg-color);
+  color: var(--text-color);
+}
+
+.filter-btn-secondary:hover {
+  background-color: var(--secondary-color);
+}
+
+.filter-count {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  margin-bottom: 10px;
+  text-align: center;
+}
+
+.label-list {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.label-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.label-item:hover {
+  background-color: var(--secondary-color);
+}
+
+.label-item.selected {
+  background-color: rgba(246, 130, 31, 0.15);
+  color: var(--text-color);
+}
+
+.label-item input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  accent-color: var(--primary-color);
+}
+
+.label-color {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.label-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Chart Area */
+.chart-area {
+  flex: 1;
+  min-width: 0;
+}
+
+.chart-area .chart-container-wrapper {
+  height: 500px;
+}
+
+/* ============================================================================
+   Bus Factor Table Styles
+   ============================================================================ */
+
+.bus-factor-table-container {
+  margin-bottom: 40px;
+}
+
+.bus-factor-header {
+  margin-bottom: 20px;
+}
+
+.bus-factor-title-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.bus-factor-title-row h3 {
+  margin: 0;
+  font-size: 1.3rem;
+}
+
+/* Tooltip */
+.tooltip-container {
+  position: relative;
+}
+
+.tooltip-trigger {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background-color: var(--secondary-color);
+  border: 1px solid var(--border-color);
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  font-weight: bold;
+  cursor: help;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.tooltip-trigger:hover {
+  background-color: var(--border-color);
+  color: var(--text-color);
+}
+
+.tooltip-content {
+  position: absolute;
+  left: 0;
+  top: 28px;
+  z-index: 100;
+  width: 280px;
+  padding: 15px;
+  background-color: var(--bg-color);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.tooltip-title {
+  font-weight: 600;
+  color: var(--text-color);
+  margin-bottom: 8px;
+}
+
+.tooltip-content p {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  margin: 0 0 8px 0;
+  line-height: 1.5;
+}
+
+.tooltip-note {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+/* Bus Factor Table */
+.bus-factor-table-wrapper {
+  overflow-x: auto;
+  overflow-y: auto;
+  max-height: 600px;
+  background-color: var(--surface-color);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+}
+
+.bus-factor-table {
+  width: 100%;
+  min-width: max-content;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.bus-factor-table thead {
+  background-color: var(--secondary-color);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.bus-factor-table th {
+  padding: 12px 15px;
+  text-align: left;
+  font-weight: 600;
+  color: var(--text-color);
+  border-bottom: 2px solid var(--border-color);
+  white-space: nowrap;
+}
+
+.bus-factor-table th.center {
+  text-align: center;
+}
+
+.bus-factor-table th.sortable {
+  cursor: pointer;
+  user-select: none;
+}
+
+.bus-factor-table th.sortable:hover {
+  background-color: var(--border-color);
+}
+
+.th-content {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.th-content.center {
+  justify-content: center;
+}
+
+.sort-indicator {
+  font-size: 0.75rem;
+  color: var(--primary-color);
+}
+
+.team-member-col {
+  min-width: 80px;
+  max-width: 100px;
+}
+
+.first-team-col {
+  border-left: 2px solid var(--border-color);
+}
+
+.member-name {
+  font-size: 0.8rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: block;
+  max-width: 80px;
+}
+
+.bus-factor-table td {
+  padding: 10px 15px;
+  border-bottom: 1px solid var(--border-color);
+  vertical-align: middle;
+}
+
+.bus-factor-table tbody tr:hover {
+  background-color: rgba(246, 130, 31, 0.05);
+}
+
+.directory-cell {
+  font-family: 'Courier New', monospace;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.directory-cell code {
+  background: none;
+  padding: 0;
+}
+
+.bus-factor-table td.center {
+  text-align: center;
+}
+
+.team-member-cell {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.highest-contributor {
+  background-color: rgba(59, 130, 246, 0.15);
+  color: var(--text-color);
+  font-weight: 600;
+}
+
+/* Bus Factor Badge */
+.bus-factor-badge {
+  display: inline-block;
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.bus-factor-critical {
+  background-color: rgba(239, 68, 68, 0.2);
+  color: var(--danger-color);
+}
+
+.bus-factor-warning {
+  background-color: rgba(234, 179, 8, 0.2);
+  color: var(--warning-color);
+}
+
+.bus-factor-healthy {
+  background-color: rgba(34, 197, 94, 0.2);
+  color: var(--success-color);
+}
+
+/* Bus Factor Legend */
+.bus-factor-legend {
+  margin-top: 15px;
+  padding: 10px 15px;
+  background-color: var(--surface-color);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+}
+
+.legend-title {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-color);
+  margin-bottom: 8px;
+}
+
+.legend-items {
+  display: flex;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.legend-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+}
+
+.legend-dot.bus-factor-critical {
+  background-color: var(--danger-color);
+}
+
+.legend-dot.bus-factor-warning {
+  background-color: var(--warning-color);
+}
+
+.legend-dot.bus-factor-healthy {
+  background-color: var(--success-color);
+}
+
+/* Responsive adjustments for new features */
+@media (max-width: 900px) {
+  .chart-layout {
+    flex-direction: column;
+  }
+  
+  .label-filter-sidebar {
+    width: 100%;
+    max-height: 200px;
+  }
+  
+  .label-list {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+  
+  .label-item {
+    flex: 0 0 auto;
   }
 }

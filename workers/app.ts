@@ -58,6 +58,16 @@ export default {
       return handleSyncGitHubItems(request, env);
     }
     
+    // Issue label statistics endpoint
+    if (url.pathname === '/api/issue-label-stats') {
+      return handleIssueLabelStats(request, env);
+    }
+    
+    // Bus factor endpoint
+    if (url.pathname === '/api/bus-factor') {
+      return handleBusFactor(request, env);
+    }
+    
     // All other requests go to React Router
     return requestHandler(request, {
       cloudflare: { env, ctx },
@@ -980,7 +990,58 @@ async function backfillHistoricalData(env: Env, startDate: Date, endDate: Date) 
 // Constants
 const GITHUB_ITEMS_KV_KEY = 'github-items';
 const GITHUB_ITEMS_META_KV_KEY = 'github-items-meta';
+const BUS_FACTOR_CACHE_KV_KEY = 'bus-factor-cache';
 const SYNC_OVERLAP_MINUTES = 10; // Look back 10 minutes past lastSync to avoid race conditions
+
+// Bus factor types
+interface BusFactorResult {
+  directory: string;
+  busFactor: number;
+  topContributors: Array<{
+    login: string;
+    commits: number;
+    percentage: number;
+  }>;
+  teamMemberContributions: Record<string, number>;
+}
+
+// Monitored directories for bus factor analysis
+const MONITORED_DIRECTORIES = [
+  'packages/chrome-devtools-patches',
+  'packages/vite-plugin-cloudflare',
+  'packages/vite-plugin-cloudflare/src',
+  'packages/wrangler/src/auth',
+  'packages/wrangler/src/deploy',
+  'packages/wrangler/src/dev',
+  'packages/wrangler/src/pages',
+  'packages/wrangler/src/d1',
+  'packages/wrangler/src/kv',
+  'packages/wrangler/src/r2',
+  'packages/wrangler/src/queues',
+  'packages/wrangler/src/vectorize',
+  'packages/wrangler/src/hyperdrive',
+  'packages/wrangler/src/worker',
+  'packages/wrangler/src/api',
+  'packages/wrangler/src/config',
+  'packages/wrangler/src/init',
+  'packages/wrangler/src/publish',
+  'packages/wrangler/src/secret',
+  'packages/wrangler/src/tail',
+  'packages/wrangler/src/metrics',
+] as const;
+
+// Team members for bus factor analysis
+const WRANGLER_TEAM_MEMBERS = [
+  'penalosa',
+  'jamesopstad',
+  'dario-piotrowicz',
+  'emily-shen',
+  'edmundhung',
+  'NuroDev',
+  'petebacondarwin',
+  'ascorbic',
+  'vicb',
+] as const;
 
 // Enhanced GitHub item stored in KV
 interface GitHubItem {
@@ -1793,4 +1854,375 @@ function calculateDailyOpenCounts(
   }
   
   return result;
+}
+
+// ============================================================================
+// Issue Label Statistics
+// ============================================================================
+
+// Handle issue label stats API: GET /api/issue-label-stats?start=<date>&end=<date>
+// Computes historical issue counts by label from the synced GitHub items
+async function handleIssueLabelStats(request: Request, env: Env): Promise<Response> {
+  try {
+    const url = new URL(request.url);
+    const startParam = url.searchParams.get('start');
+    const endParam = url.searchParams.get('end');
+    
+    // Load all GitHub items from KV
+    const items = await loadGitHubItemsFromKV(env);
+    const meta = await loadGitHubItemsMetaFromKV(env);
+    
+    if (!meta || Object.keys(items).length === 0) {
+      return new Response(JSON.stringify({
+        timestamps: [],
+        total: [],
+        labels: {},
+        message: 'No GitHub data available. Please trigger a sync first.',
+        needsSync: true
+      }), {
+        headers: {
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': '*',
+          'Cache-Control': 'public, max-age=300'
+        }
+      });
+    }
+    
+    // Filter to only issues (not PRs)
+    const issues = Object.values(items).filter(item => item.type === 'issue');
+    
+    // Determine date range
+    const endDate = endParam ? new Date(endParam) : new Date();
+    const startDate = startParam ? new Date(startParam) : new Date(endDate.getTime() - 30 * 24 * 60 * 60 * 1000);
+    
+    // Generate daily data points
+    const dataPoints = calculateDailyLabelCounts(issues, startDate, endDate);
+    
+    return new Response(JSON.stringify({
+      ...dataPoints,
+      lastSync: meta.lastSync,
+      totalIssues: issues.length
+    }), {
+      headers: {
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*',
+        'Cache-Control': 'public, max-age=300'
+      }
+    });
+  } catch (error: any) {
+    console.error('Error fetching issue label stats:', error);
+    return new Response(JSON.stringify({ error: error.message }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+    });
+  }
+}
+
+// Calculate daily open issue counts broken down by label
+function calculateDailyLabelCounts(
+  issues: GitHubItem[],
+  startDate: Date,
+  endDate: Date
+): { timestamps: number[]; total: number[]; labels: Record<string, number[]> } {
+  const timestamps: number[] = [];
+  const total: number[] = [];
+  const labels: Record<string, number[]> = {};
+  
+  // Collect all unique labels from issues
+  const allLabels = new Set<string>();
+  for (const issue of issues) {
+    for (const label of issue.labels) {
+      allLabels.add(label.name);
+    }
+  }
+  
+  // Initialize label arrays
+  for (const label of allLabels) {
+    labels[label] = [];
+  }
+  
+  // Iterate through each day in the range
+  const currentDate = new Date(startDate);
+  currentDate.setHours(23, 59, 59, 999); // End of day
+  
+  while (currentDate <= endDate) {
+    const dayEnd = new Date(currentDate);
+    const timestamp = Math.floor(dayEnd.getTime() / 1000);
+    
+    timestamps.push(timestamp);
+    
+    // Count issues that were open on this day and track by label
+    let openCount = 0;
+    const labelCounts: Record<string, number> = {};
+    
+    // Initialize label counts for this day
+    for (const label of allLabels) {
+      labelCounts[label] = 0;
+    }
+    
+    for (const issue of issues) {
+      const createdAt = new Date(issue.createdAt);
+      const closedAt = issue.closedAt ? new Date(issue.closedAt) : null;
+      
+      // Issue is open on this day if created before/on this day AND (not closed OR closed after this day)
+      if (createdAt <= dayEnd && (!closedAt || closedAt > dayEnd)) {
+        openCount++;
+        
+        // Count this issue for each of its labels
+        for (const label of issue.labels) {
+          if (labelCounts[label.name] !== undefined) {
+            labelCounts[label.name]++;
+          }
+        }
+      }
+    }
+    
+    total.push(openCount);
+    
+    // Add label counts to the arrays
+    for (const label of allLabels) {
+      labels[label].push(labelCounts[label]);
+    }
+    
+    // Move to next day
+    currentDate.setDate(currentDate.getDate() + 1);
+  }
+  
+  return { timestamps, total, labels };
+}
+
+// ============================================================================
+// Bus Factor Analysis
+// ============================================================================
+
+// Calculate bus factor from commit data
+function calculateBusFactor(
+  commits: Array<{ author: string | null }>,
+  teamMembers: readonly string[]
+): {
+  busFactor: number;
+  topContributors: BusFactorResult['topContributors'];
+  teamMemberContributions: Record<string, number>;
+} {
+  // Count commits per author
+  const authorCounts = new Map<string, number>();
+
+  for (const commit of commits) {
+    const author = commit.author;
+    if (author) {
+      authorCounts.set(author, (authorCounts.get(author) || 0) + 1);
+    }
+  }
+
+  const totalCommits = commits.length;
+  if (totalCommits === 0) {
+    const emptyContributions: Record<string, number> = {};
+    teamMembers.forEach(member => emptyContributions[member] = 0);
+    return {
+      busFactor: 0,
+      topContributors: [],
+      teamMemberContributions: emptyContributions,
+    };
+  }
+
+  // Sort authors by commit count (descending)
+  const sortedAuthors = Array.from(authorCounts.entries())
+    .map(([login, commits]) => ({
+      login,
+      commits,
+      percentage: (commits / totalCommits) * 100,
+    }))
+    .sort((a, b) => b.commits - a.commits);
+
+  // Calculate bus factor (minimum contributors for 50% of commits)
+  let cumulativePercentage = 0;
+  let busFactor = 0;
+
+  for (const author of sortedAuthors) {
+    busFactor++;
+    cumulativePercentage += author.percentage;
+    if (cumulativePercentage >= 50) {
+      break;
+    }
+  }
+
+  // Calculate contributions for all team members
+  const teamMemberContributions: Record<string, number> = {};
+  teamMembers.forEach(member => {
+    const memberCommits = authorCounts.get(member) || 0;
+    teamMemberContributions[member] = (memberCommits / totalCommits) * 100;
+  });
+
+  return {
+    busFactor,
+    topContributors: sortedAuthors.slice(0, 10),
+    teamMemberContributions,
+  };
+}
+
+// Fetch commits for a directory from GitHub REST API
+async function fetchDirectoryCommits(
+  env: Env,
+  directory: string
+): Promise<Array<{ author: string | null }>> {
+  const commits: Array<{ author: string | null }> = [];
+  let page = 1;
+  const perPage = 100;
+
+  // Fetch last 6 months of commits
+  const sixMonthsAgo = new Date();
+  sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+  const sinceDate = sixMonthsAgo.toISOString();
+
+  while (true) {
+    const url = `https://api.github.com/repos/cloudflare/workers-sdk/commits?path=${encodeURIComponent(directory)}&per_page=${perPage}&page=${page}&since=${sinceDate}`;
+    
+    const response = await fetch(url, {
+      headers: {
+        'Accept': 'application/vnd.github+json',
+        'User-Agent': 'Workers-SDK-CI-Analyzer',
+        ...(env.GITHUB_TOKEN ? { 'Authorization': `Bearer ${env.GITHUB_TOKEN}` } : {})
+      }
+    });
+
+    if (!response.ok) {
+      console.error(`Failed to fetch commits for ${directory}: ${response.status}`);
+      break;
+    }
+
+    const data = await response.json() as any[];
+    if (data.length === 0) break;
+
+    for (const commit of data) {
+      commits.push({
+        author: commit.author?.login || null
+      });
+    }
+
+    if (data.length < perPage) break;
+    page++;
+
+    // Limit to prevent excessive API calls
+    if (page > 10) break;
+  }
+
+  return commits;
+}
+
+// Analyze bus factor for a single directory
+async function analyzeDirectoryBusFactor(
+  env: Env,
+  directory: string
+): Promise<BusFactorResult> {
+  try {
+    const commits = await fetchDirectoryCommits(env, directory);
+    const analysis = calculateBusFactor(commits, WRANGLER_TEAM_MEMBERS);
+
+    return {
+      directory,
+      busFactor: analysis.busFactor,
+      topContributors: analysis.topContributors,
+      teamMemberContributions: analysis.teamMemberContributions,
+    };
+  } catch (error) {
+    console.error(`Error analyzing directory ${directory}:`, error);
+    const emptyContributions: Record<string, number> = {};
+    WRANGLER_TEAM_MEMBERS.forEach(member => emptyContributions[member] = 0);
+    return {
+      directory,
+      busFactor: 0,
+      topContributors: [],
+      teamMemberContributions: emptyContributions,
+    };
+  }
+}
+
+// Analyze all monitored directories
+async function analyzeAllDirectories(env: Env): Promise<BusFactorResult[]> {
+  const results: BusFactorResult[] = [];
+
+  // Process directories in parallel batches of 5 to avoid rate limiting
+  const batchSize = 5;
+  for (let i = 0; i < MONITORED_DIRECTORIES.length; i += batchSize) {
+    const batch = MONITORED_DIRECTORIES.slice(i, i + batchSize);
+    const batchResults = await Promise.all(
+      batch.map(dir => analyzeDirectoryBusFactor(env, dir))
+    );
+    results.push(...batchResults);
+    
+    // Small delay between batches
+    if (i + batchSize < MONITORED_DIRECTORIES.length) {
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+  }
+
+  return results;
+}
+
+// Handle bus factor API: GET /api/bus-factor
+async function handleBusFactor(request: Request, env: Env): Promise<Response> {
+  try {
+    const url = new URL(request.url);
+    const forceRefresh = url.searchParams.has('refresh');
+
+    // Check cache first (unless force refresh)
+    if (!forceRefresh) {
+      const cached = await env.CI_DATA_KV.get(BUS_FACTOR_CACHE_KV_KEY, 'json') as {
+        data: BusFactorResult[];
+        timestamp: string;
+      } | null;
+
+      if (cached) {
+        const cacheAge = Date.now() - new Date(cached.timestamp).getTime();
+        const oneHour = 60 * 60 * 1000;
+
+        if (cacheAge < oneHour) {
+          return new Response(JSON.stringify({
+            data: cached.data,
+            teamMembers: WRANGLER_TEAM_MEMBERS,
+            cached: true,
+            cachedAt: cached.timestamp
+          }), {
+            headers: {
+              'Content-Type': 'application/json',
+              'Access-Control-Allow-Origin': '*',
+              'Cache-Control': 'public, max-age=300'
+            }
+          });
+        }
+      }
+    }
+
+    // Analyze all directories
+    console.log('Analyzing bus factor for all monitored directories...');
+    const results = await analyzeAllDirectories(env);
+
+    // Cache the results
+    const cacheData = {
+      data: results,
+      timestamp: new Date().toISOString()
+    };
+    await env.CI_DATA_KV.put(BUS_FACTOR_CACHE_KV_KEY, JSON.stringify(cacheData), {
+      expirationTtl: 60 * 60 * 2 // 2 hours
+    });
+
+    return new Response(JSON.stringify({
+      data: results,
+      teamMembers: WRANGLER_TEAM_MEMBERS,
+      cached: false,
+      analyzedAt: cacheData.timestamp
+    }), {
+      headers: {
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*',
+        'Cache-Control': 'public, max-age=300'
+      }
+    });
+  } catch (error: any) {
+    console.error('Error analyzing bus factor:', error);
+    return new Response(JSON.stringify({ error: error.message }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+    });
+  }
 }
