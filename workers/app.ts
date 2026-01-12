@@ -48,6 +48,16 @@ export default {
       return handleHistory(request, env);
     }
     
+    // GitHub issues/PRs endpoint
+    if (url.pathname === '/api/github-items') {
+      return handleGitHubItems(request, env);
+    }
+    
+    // GitHub items sync endpoint
+    if (url.pathname === '/api/sync-github-items') {
+      return handleSyncGitHubItems(request, env);
+    }
+    
     // All other requests go to React Router
     return requestHandler(request, {
       cloudflare: { env, ctx },
@@ -55,14 +65,26 @@ export default {
   },
   
   async scheduled(event, env, ctx) {
-    // Cron trigger - fetch and store CI data daily
-    console.log('Scheduled job triggered at', new Date(event.scheduledTime).toISOString());
+    const scheduledTime = new Date(event.scheduledTime);
+    const hour = scheduledTime.getUTCHours();
+    console.log(`Scheduled job triggered at ${scheduledTime.toISOString()} (hour: ${hour} UTC)`);
     
+    // CI data sync only at 6 AM UTC (once daily)
+    if (hour === 6) {
+      try {
+        await fetchAndStoreCIData(env);
+        console.log('Successfully updated CI data in KV');
+      } catch (error: any) {
+        console.error('Failed to update CI data:', error.message);
+      }
+    }
+    
+    // GitHub items sync every hour
     try {
-      await fetchAndStoreCIData(env);
-      console.log('Successfully updated CI data in KV');
+      const result = await syncGitHubItems(env, false);
+      console.log(`Successfully synced GitHub items: ${result.newItems} new, ${result.updatedItems} updated, ${result.totalItems} total`);
     } catch (error: any) {
-      console.error('Failed to update CI data:', error.message);
+      console.error('Failed to sync GitHub items:', error.message);
     }
   }
 } satisfies ExportedHandler<Env>;
@@ -949,4 +971,826 @@ async function backfillHistoricalData(env: Env, startDate: Date, endDate: Date) 
     // Rate limiting: small delay between requests
     await new Promise(resolve => setTimeout(resolve, 100));
   }
+}
+
+// ============================================================================
+// GitHub Items (Issues/PRs) - Types, Storage, and Sync
+// ============================================================================
+
+// Constants
+const GITHUB_ITEMS_KV_KEY = 'github-items';
+const GITHUB_ITEMS_META_KV_KEY = 'github-items-meta';
+const SYNC_OVERLAP_MINUTES = 10; // Look back 10 minutes past lastSync to avoid race conditions
+
+// Enhanced GitHub item stored in KV
+interface GitHubItem {
+  number: number;
+  type: 'issue' | 'pr';
+  title: string;
+  state: 'open' | 'closed' | 'merged';
+  createdAt: string;
+  closedAt: string | null;
+  updatedAt: string;
+  author: {
+    login: string;
+    avatarUrl: string;
+  } | null;
+  labels: Array<{
+    name: string;
+    color: string;
+  }>;
+}
+
+// Metadata stored alongside items
+interface GitHubItemsMeta {
+  lastSync: string;
+  highestNumber: number;
+  oldestDate: string;
+  issueCount: number;
+  prCount: number;
+}
+
+// Raw GraphQL response types
+interface GitHubGraphQLIssueNode {
+  number: number;
+  title: string;
+  state: 'OPEN' | 'CLOSED';
+  stateReason: 'COMPLETED' | 'NOT_PLANNED' | 'REOPENED' | null;
+  createdAt: string;
+  closedAt: string | null;
+  updatedAt: string;
+  author: {
+    login: string;
+    avatarUrl: string;
+  } | null;
+  labels: {
+    nodes: Array<{
+      name: string;
+      color: string;
+    }>;
+  };
+}
+
+interface GitHubGraphQLPRNode {
+  number: number;
+  title: string;
+  state: 'OPEN' | 'CLOSED' | 'MERGED';
+  merged: boolean;
+  createdAt: string;
+  closedAt: string | null;
+  mergedAt: string | null;
+  updatedAt: string;
+  author: {
+    login: string;
+    avatarUrl: string;
+  } | null;
+  labels: {
+    nodes: Array<{
+      name: string;
+      color: string;
+    }>;
+  };
+}
+
+interface GitHubIssuesGraphQLResponse {
+  data?: {
+    repository?: {
+      issues?: {
+        pageInfo: { hasNextPage: boolean; endCursor: string | null };
+        nodes: GitHubGraphQLIssueNode[];
+      };
+    };
+  };
+  errors?: Array<{ message: string }>;
+}
+
+interface GitHubPRsGraphQLResponse {
+  data?: {
+    repository?: {
+      pullRequests?: {
+        pageInfo: { hasNextPage: boolean; endCursor: string | null };
+        nodes: GitHubGraphQLPRNode[];
+      };
+    };
+  };
+  errors?: Array<{ message: string }>;
+}
+
+// ============================================================================
+// KV Storage Functions
+// ============================================================================
+
+async function loadGitHubItemsFromKV(env: Env): Promise<Record<number, GitHubItem>> {
+  const data = await env.CI_DATA_KV.get(GITHUB_ITEMS_KV_KEY, 'json');
+  return (data as Record<number, GitHubItem>) || {};
+}
+
+async function loadGitHubItemsMetaFromKV(env: Env): Promise<GitHubItemsMeta | null> {
+  const data = await env.CI_DATA_KV.get(GITHUB_ITEMS_META_KV_KEY, 'json');
+  return data as GitHubItemsMeta | null;
+}
+
+async function saveGitHubItemsToKV(
+  env: Env,
+  items: Record<number, GitHubItem>,
+  meta: GitHubItemsMeta
+): Promise<void> {
+  await Promise.all([
+    env.CI_DATA_KV.put(GITHUB_ITEMS_KV_KEY, JSON.stringify(items)),
+    env.CI_DATA_KV.put(GITHUB_ITEMS_META_KV_KEY, JSON.stringify(meta))
+  ]);
+}
+
+async function deleteGitHubItemsFromKV(env: Env): Promise<void> {
+  await Promise.all([
+    env.CI_DATA_KV.delete(GITHUB_ITEMS_KV_KEY),
+    env.CI_DATA_KV.delete(GITHUB_ITEMS_META_KV_KEY)
+  ]);
+}
+
+// ============================================================================
+// GraphQL Fetch Functions
+// ============================================================================
+
+function getIssuesQuery(filterBySince?: string): string {
+  const filterClause = filterBySince 
+    ? `filterBy: { since: "${filterBySince}" }` 
+    : '';
+  
+  return `
+    query($owner: String!, $repo: String!, $cursor: String) {
+      repository(owner: $owner, name: $repo) {
+        issues(
+          first: 100
+          after: $cursor
+          ${filterClause}
+          orderBy: { field: CREATED_AT, direction: ASC }
+        ) {
+          pageInfo {
+            hasNextPage
+            endCursor
+          }
+          nodes {
+            number
+            title
+            state
+            stateReason
+            createdAt
+            closedAt
+            updatedAt
+            author {
+              login
+              avatarUrl
+            }
+            labels(first: 20) {
+              nodes {
+                name
+                color
+              }
+            }
+          }
+        }
+      }
+    }
+  `;
+}
+
+function getPRsQuery(): string {
+  return `
+    query($owner: String!, $repo: String!, $cursor: String) {
+      repository(owner: $owner, name: $repo) {
+        pullRequests(
+          first: 100
+          after: $cursor
+          orderBy: { field: CREATED_AT, direction: ASC }
+        ) {
+          pageInfo {
+            hasNextPage
+            endCursor
+          }
+          nodes {
+            number
+            title
+            state
+            merged
+            createdAt
+            closedAt
+            mergedAt
+            updatedAt
+            author {
+              login
+              avatarUrl
+            }
+            labels(first: 20) {
+              nodes {
+                name
+                color
+              }
+            }
+          }
+        }
+      }
+    }
+  `;
+}
+
+// For fetching recently updated PRs (PRs don't support filterBy.since, so we use UPDATED_AT ordering)
+function getPRsUpdatedQuery(): string {
+  return `
+    query($owner: String!, $repo: String!, $cursor: String) {
+      repository(owner: $owner, name: $repo) {
+        pullRequests(
+          first: 100
+          after: $cursor
+          orderBy: { field: UPDATED_AT, direction: DESC }
+        ) {
+          pageInfo {
+            hasNextPage
+            endCursor
+          }
+          nodes {
+            number
+            title
+            state
+            merged
+            createdAt
+            closedAt
+            mergedAt
+            updatedAt
+            author {
+              login
+              avatarUrl
+            }
+            labels(first: 20) {
+              nodes {
+                name
+                color
+              }
+            }
+          }
+        }
+      }
+    }
+  `;
+}
+
+function transformIssueNode(node: GitHubGraphQLIssueNode): GitHubItem {
+  return {
+    number: node.number,
+    type: 'issue',
+    title: node.title,
+    state: node.state === 'OPEN' ? 'open' : 'closed',
+    createdAt: node.createdAt,
+    closedAt: node.closedAt,
+    updatedAt: node.updatedAt,
+    author: node.author,
+    labels: node.labels.nodes
+  };
+}
+
+function transformPRNode(node: GitHubGraphQLPRNode): GitHubItem {
+  let state: 'open' | 'closed' | 'merged';
+  if (node.merged) {
+    state = 'merged';
+  } else if (node.state === 'OPEN') {
+    state = 'open';
+  } else {
+    state = 'closed';
+  }
+  
+  return {
+    number: node.number,
+    type: 'pr',
+    title: node.title,
+    state,
+    createdAt: node.createdAt,
+    closedAt: node.closedAt || node.mergedAt,
+    updatedAt: node.updatedAt,
+    author: node.author,
+    labels: node.labels.nodes
+  };
+}
+
+async function fetchIssuesGraphQL(
+  env: Env,
+  query: string,
+  cursor: string | null
+): Promise<GitHubIssuesGraphQLResponse> {
+  const response = await fetch('https://api.github.com/graphql', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${env.GITHUB_TOKEN}`,
+      'Content-Type': 'application/json',
+      'User-Agent': 'Workers-SDK-CI-Analyzer'
+    },
+    body: JSON.stringify({
+      query,
+      variables: {
+        owner: 'cloudflare',
+        repo: 'workers-sdk',
+        cursor
+      }
+    })
+  });
+
+  if (!response.ok) {
+    throw new Error(`GitHub GraphQL API error: ${response.status}`);
+  }
+
+  const result = await response.json() as GitHubIssuesGraphQLResponse;
+
+  if (result.errors && result.errors.length > 0) {
+    throw new Error(`GraphQL errors: ${result.errors.map((e: { message: string }) => e.message).join(', ')}`);
+  }
+
+  return result;
+}
+
+async function fetchPRsGraphQL(
+  env: Env,
+  query: string,
+  cursor: string | null
+): Promise<GitHubPRsGraphQLResponse> {
+  const response = await fetch('https://api.github.com/graphql', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${env.GITHUB_TOKEN}`,
+      'Content-Type': 'application/json',
+      'User-Agent': 'Workers-SDK-CI-Analyzer'
+    },
+    body: JSON.stringify({
+      query,
+      variables: {
+        owner: 'cloudflare',
+        repo: 'workers-sdk',
+        cursor
+      }
+    })
+  });
+
+  if (!response.ok) {
+    throw new Error(`GitHub GraphQL API error: ${response.status}`);
+  }
+
+  const result = await response.json() as GitHubPRsGraphQLResponse;
+
+  if (result.errors && result.errors.length > 0) {
+    throw new Error(`GraphQL errors: ${result.errors.map((e: { message: string }) => e.message).join(', ')}`);
+  }
+
+  return result;
+}
+
+// ============================================================================
+// Sync Functions
+// ============================================================================
+
+interface SyncResult {
+  newItems: number;
+  updatedItems: number;
+  totalItems: number;
+  issueCount: number;
+  prCount: number;
+  oldestDate: string;
+  syncDuration: number;
+}
+
+async function syncGitHubItems(env: Env, force: boolean): Promise<SyncResult> {
+  const startTime = Date.now();
+  
+  if (!env.GITHUB_TOKEN) {
+    throw new Error('GITHUB_TOKEN is required for syncing');
+  }
+
+  let items: Record<number, GitHubItem>;
+  let meta: GitHubItemsMeta | null;
+  let newItemCount = 0;
+  let updatedItemCount = 0;
+
+  if (force) {
+    // Force sync: delete everything and start fresh
+    console.log('Force sync: deleting existing data...');
+    await deleteGitHubItemsFromKV(env);
+    items = {};
+    meta = null;
+  } else {
+    // Load existing data
+    items = await loadGitHubItemsFromKV(env);
+    meta = await loadGitHubItemsMetaFromKV(env);
+  }
+
+  const existingCount = Object.keys(items).length;
+  console.log(`Starting sync. Existing items: ${existingCount}`);
+
+  // If no metadata or force sync, do full sync
+  if (!meta || force) {
+    console.log('Performing full sync...');
+    const result = await performFullSync(env, items);
+    newItemCount = result.newItems;
+  } else {
+    // Incremental sync
+    console.log(`Performing incremental sync. Last sync: ${meta.lastSync}, Highest number: ${meta.highestNumber}`);
+    
+    // 1. Fetch new items (created after highest number we have)
+    const newResult = await fetchNewItems(env, items, meta.highestNumber);
+    newItemCount = newResult.newItems;
+    
+    // 2. Fetch recently updated items (since lastSync - overlap buffer)
+    const sinceDate = new Date(new Date(meta.lastSync).getTime() - SYNC_OVERLAP_MINUTES * 60 * 1000);
+    const updateResult = await fetchUpdatedItems(env, items, sinceDate);
+    updatedItemCount = updateResult.updatedItems;
+  }
+
+  // Calculate new metadata
+  const itemValues = Object.values(items);
+  const issueCount = itemValues.filter(i => i.type === 'issue').length;
+  const prCount = itemValues.filter(i => i.type === 'pr').length;
+  const highestNumber = Math.max(0, ...Object.keys(items).map(Number));
+  const oldestDate = itemValues.length > 0
+    ? itemValues.reduce((min, item) => item.createdAt < min ? item.createdAt : min, itemValues[0].createdAt).split('T')[0]
+    : new Date().toISOString().split('T')[0];
+
+  const newMeta: GitHubItemsMeta = {
+    lastSync: new Date().toISOString(),
+    highestNumber,
+    oldestDate,
+    issueCount,
+    prCount
+  };
+
+  // Save to KV
+  await saveGitHubItemsToKV(env, items, newMeta);
+
+  const syncDuration = Date.now() - startTime;
+  console.log(`Sync complete. New: ${newItemCount}, Updated: ${updatedItemCount}, Total: ${itemValues.length}, Duration: ${syncDuration}ms`);
+
+  return {
+    newItems: newItemCount,
+    updatedItems: updatedItemCount,
+    totalItems: itemValues.length,
+    issueCount,
+    prCount,
+    oldestDate,
+    syncDuration
+  };
+}
+
+async function performFullSync(
+  env: Env,
+  items: Record<number, GitHubItem>
+): Promise<{ newItems: number }> {
+  let newItems = 0;
+
+  // Fetch all issues
+  console.log('Fetching all issues...');
+  let cursor: string | null = null;
+  let hasNextPage = true;
+  let pageCount = 0;
+
+  while (hasNextPage) {
+    const result = await fetchIssuesGraphQL(env, getIssuesQuery(), cursor);
+    const issuesData = result.data?.repository?.issues;
+    
+    if (!issuesData) break;
+
+    for (const node of issuesData.nodes) {
+      if (!items[node.number]) {
+        newItems++;
+      }
+      items[node.number] = transformIssueNode(node);
+    }
+
+    hasNextPage = issuesData.pageInfo.hasNextPage;
+    cursor = issuesData.pageInfo.endCursor;
+    pageCount++;
+
+    if (pageCount % 10 === 0) {
+      console.log(`Issues: ${pageCount} pages, ${Object.keys(items).length} items`);
+    }
+
+    await new Promise(resolve => setTimeout(resolve, 50));
+  }
+  console.log(`Fetched ${pageCount} pages of issues`);
+
+  // Fetch all PRs
+  console.log('Fetching all PRs...');
+  cursor = null;
+  hasNextPage = true;
+  pageCount = 0;
+
+  while (hasNextPage) {
+    const result = await fetchPRsGraphQL(env, getPRsQuery(), cursor);
+    const prsData = result.data?.repository?.pullRequests;
+    
+    if (!prsData) break;
+
+    for (const node of prsData.nodes) {
+      if (!items[node.number]) {
+        newItems++;
+      }
+      items[node.number] = transformPRNode(node);
+    }
+
+    hasNextPage = prsData.pageInfo.hasNextPage;
+    cursor = prsData.pageInfo.endCursor;
+    pageCount++;
+
+    if (pageCount % 10 === 0) {
+      console.log(`PRs: ${pageCount} pages, ${Object.keys(items).length} items`);
+    }
+
+    await new Promise(resolve => setTimeout(resolve, 50));
+  }
+  console.log(`Fetched ${pageCount} pages of PRs`);
+
+  return { newItems };
+}
+
+async function fetchNewItems(
+  env: Env,
+  items: Record<number, GitHubItem>,
+  highestNumber: number
+): Promise<{ newItems: number }> {
+  let newItems = 0;
+
+  // Fetch new issues (we fetch all and skip ones we have, since we can't filter by number > X)
+  // Use CREATED_AT DESC to get newest first, stop when we hit known items
+  console.log(`Fetching new issues (after #${highestNumber})...`);
+  let cursor: string | null = null;
+  let hasNextPage = true;
+  let consecutiveKnown = 0;
+  const STOP_THRESHOLD = 100; // Stop after seeing 100 consecutive known items
+
+  while (hasNextPage && consecutiveKnown < STOP_THRESHOLD) {
+    const result = await fetchIssuesGraphQL(env, getIssuesQuery(), cursor);
+    const issuesData = result.data?.repository?.issues;
+    
+    if (!issuesData) break;
+
+    for (const node of issuesData.nodes) {
+      if (items[node.number]) {
+        consecutiveKnown++;
+      } else {
+        consecutiveKnown = 0;
+        newItems++;
+        items[node.number] = transformIssueNode(node);
+      }
+    }
+
+    hasNextPage = issuesData.pageInfo.hasNextPage;
+    cursor = issuesData.pageInfo.endCursor;
+
+    await new Promise(resolve => setTimeout(resolve, 50));
+  }
+
+  // Fetch new PRs
+  console.log(`Fetching new PRs (after #${highestNumber})...`);
+  cursor = null;
+  hasNextPage = true;
+  consecutiveKnown = 0;
+
+  while (hasNextPage && consecutiveKnown < STOP_THRESHOLD) {
+    const result = await fetchPRsGraphQL(env, getPRsQuery(), cursor);
+    const prsData = result.data?.repository?.pullRequests;
+    
+    if (!prsData) break;
+
+    for (const node of prsData.nodes) {
+      if (items[node.number]) {
+        consecutiveKnown++;
+      } else {
+        consecutiveKnown = 0;
+        newItems++;
+        items[node.number] = transformPRNode(node);
+      }
+    }
+
+    hasNextPage = prsData.pageInfo.hasNextPage;
+    cursor = prsData.pageInfo.endCursor;
+
+    await new Promise(resolve => setTimeout(resolve, 50));
+  }
+
+  console.log(`Found ${newItems} new items`);
+  return { newItems };
+}
+
+async function fetchUpdatedItems(
+  env: Env,
+  items: Record<number, GitHubItem>,
+  since: Date
+): Promise<{ updatedItems: number }> {
+  let updatedItems = 0;
+  const sinceISO = since.toISOString();
+
+  // Fetch recently updated issues
+  console.log(`Fetching issues updated since ${sinceISO}...`);
+  let cursor: string | null = null;
+  let hasNextPage = true;
+
+  while (hasNextPage) {
+    const result = await fetchIssuesGraphQL(env, getIssuesQuery(sinceISO), cursor);
+    const issuesData = result.data?.repository?.issues;
+    
+    if (!issuesData) break;
+
+    for (const node of issuesData.nodes) {
+      const existing = items[node.number];
+      if (existing && existing.updatedAt !== node.updatedAt) {
+        updatedItems++;
+      }
+      items[node.number] = transformIssueNode(node);
+    }
+
+    hasNextPage = issuesData.pageInfo.hasNextPage;
+    cursor = issuesData.pageInfo.endCursor;
+
+    await new Promise(resolve => setTimeout(resolve, 50));
+  }
+
+  // Fetch recently updated PRs (PRs don't support filterBy.since, so we order by UPDATED_AT DESC
+  // and stop when we hit items older than our since date)
+  console.log(`Fetching PRs updated since ${sinceISO}...`);
+  cursor = null;
+  hasNextPage = true;
+  let foundOlder = false;
+
+  while (hasNextPage && !foundOlder) {
+    const result = await fetchPRsGraphQL(env, getPRsUpdatedQuery(), cursor);
+    const prsData = result.data?.repository?.pullRequests;
+    
+    if (!prsData) break;
+
+    for (const node of prsData.nodes) {
+      if (new Date(node.updatedAt) < since) {
+        foundOlder = true;
+        break;
+      }
+      
+      const existing = items[node.number];
+      if (existing && existing.updatedAt !== node.updatedAt) {
+        updatedItems++;
+      }
+      items[node.number] = transformPRNode(node);
+    }
+
+    hasNextPage = prsData.pageInfo.hasNextPage;
+    cursor = prsData.pageInfo.endCursor;
+
+    await new Promise(resolve => setTimeout(resolve, 50));
+  }
+
+  console.log(`Updated ${updatedItems} items`);
+  return { updatedItems };
+}
+
+// ============================================================================
+// API Handlers
+// ============================================================================
+
+// Handle sync endpoint: POST /api/sync-github-items?force
+async function handleSyncGitHubItems(request: Request, env: Env): Promise<Response> {
+  if (request.method !== 'POST') {
+    return new Response(JSON.stringify({ error: 'Method not allowed' }), {
+      status: 405,
+      headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+    });
+  }
+
+  try {
+    const url = new URL(request.url);
+    const force = url.searchParams.has('force');
+
+    const result = await syncGitHubItems(env, force);
+
+    return new Response(JSON.stringify({
+      success: true,
+      ...result
+    }), {
+      headers: {
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*'
+      }
+    });
+  } catch (error: any) {
+    console.error('Sync error:', error);
+    return new Response(JSON.stringify({ 
+      success: false, 
+      error: error.message 
+    }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+    });
+  }
+}
+
+// Handle GitHub items endpoint: GET /api/github-items?type=issues|prs&startDate=X&endDate=Y
+async function handleGitHubItems(request: Request, env: Env): Promise<Response> {
+  try {
+    const url = new URL(request.url);
+    const type = url.searchParams.get('type') as 'issues' | 'prs';
+    const startDate = url.searchParams.get('startDate');
+    const endDate = url.searchParams.get('endDate');
+
+    if (!type || !['issues', 'prs'].includes(type)) {
+      return new Response(JSON.stringify({ error: 'type must be "issues" or "prs"' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+      });
+    }
+
+    if (!startDate || !endDate) {
+      return new Response(JSON.stringify({ error: 'startDate and endDate are required' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+      });
+    }
+
+    // Load from KV
+    const items = await loadGitHubItemsFromKV(env);
+    const meta = await loadGitHubItemsMetaFromKV(env);
+
+    if (!meta || Object.keys(items).length === 0) {
+      return new Response(JSON.stringify({ 
+        error: 'No data available. Please trigger a sync first.',
+        needsSync: true
+      }), {
+        status: 404,
+        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+      });
+    }
+
+    // Filter items by type
+    const targetType = type === 'issues' ? 'issue' : 'pr';
+    const filteredItems = Object.values(items).filter(item => item.type === targetType);
+
+    // Calculate daily open counts
+    const startDateObj = new Date(startDate);
+    const endDateObj = new Date(endDate);
+    const dailyOpenCounts = calculateDailyOpenCounts(filteredItems, startDateObj, endDateObj);
+
+    return new Response(JSON.stringify({
+      type,
+      dateRange: { start: startDate, end: endDate },
+      data: dailyOpenCounts,
+      totalItems: filteredItems.length,
+      oldestDate: meta.oldestDate,
+      lastSync: meta.lastSync
+    }), {
+      headers: {
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*',
+        'Cache-Control': 'public, max-age=300'
+      }
+    });
+  } catch (error: any) {
+    console.error('Error fetching GitHub items:', error);
+    return new Response(JSON.stringify({ error: error.message }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+    });
+  }
+}
+
+// Calculate the count of open items for each day in the range
+function calculateDailyOpenCounts(
+  items: GitHubItem[],
+  startDate: Date,
+  endDate: Date
+): Array<{ date: string; openCount: number }> {
+  const result: Array<{ date: string; openCount: number }> = [];
+  
+  // Iterate through each day in the range
+  const currentDate = new Date(startDate);
+  currentDate.setHours(23, 59, 59, 999); // End of day
+  
+  while (currentDate <= endDate) {
+    const dateStr = currentDate.toISOString().split('T')[0];
+    const dayEnd = new Date(currentDate);
+    
+    // Count items that were open on this day
+    // An item is open on day D if:
+    // - createdAt <= D AND (closedAt is null OR closedAt > D)
+    let openCount = 0;
+    
+    for (const item of items) {
+      const createdAt = new Date(item.createdAt);
+      const closedAt = item.closedAt ? new Date(item.closedAt) : null;
+      
+      // Item must have been created by end of this day
+      if (createdAt <= dayEnd) {
+        // Item is open if not closed, or closed after this day
+        if (!closedAt || closedAt > dayEnd) {
+          openCount++;
+        }
+      }
+    }
+    
+    result.push({ date: dateStr, openCount });
+    
+    // Move to next day
+    currentDate.setDate(currentDate.getDate() + 1);
+  }
+  
+  return result;
 }

@@ -16,9 +16,11 @@
     }
   ],
   
-  // Cron trigger to fetch CI data daily at 6 AM UTC
+  // Cron triggers:
+  // - CI data: daily at 6 AM UTC
+  // - GitHub items (issues/PRs): hourly
   "triggers": {
-    "crons": ["0 6 * * *"]
+    "crons": ["0 6 * * *", "0 * * * *"]
   },
   
   // Optional: Add a GitHub token for higher API rate limits

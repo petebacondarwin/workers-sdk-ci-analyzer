@@ -14,20 +14,49 @@ type Pages = {
   "/": {
     params: {};
   };
+  "/ci-flakes": {
+    params: {};
+  };
+  "/issues": {
+    params: {};
+  };
+  "/prs": {
+    params: {};
+  };
 };
 
 type RouteFiles = {
   "root.tsx": {
     id: "root";
-    page: "/";
+    page: "/" | "/ci-flakes" | "/issues" | "/prs";
   };
   "routes/home.tsx": {
     id: "routes/home";
     page: "/";
+  };
+  "routes/layout.tsx": {
+    id: "routes/layout";
+    page: "/ci-flakes" | "/issues" | "/prs";
+  };
+  "routes/ci-flakes.tsx": {
+    id: "routes/ci-flakes";
+    page: "/ci-flakes";
+  };
+  "routes/issues.tsx": {
+    id: "routes/issues";
+    page: "/issues";
+  };
+  "routes/prs.tsx": {
+    id: "routes/prs";
+    page: "/prs";
   };
 };
 
 type RouteModules = {
   "root": typeof import("./app/root.tsx");
   "routes/home": typeof import("./app/routes/home.tsx");
+  "routes/layout": typeof import("./app/routes/layout.tsx");
+  "routes/ci-flakes": typeof import("./app/routes/ci-flakes.tsx");
+  "routes/issues": typeof import("./app/routes/issues.tsx");
+  "routes/prs": typeof import("./app/routes/prs.tsx");
 };
