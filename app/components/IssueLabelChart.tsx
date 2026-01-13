@@ -265,16 +265,16 @@ export default function IssueLabelChart({ data, loading, error }: IssueLabelChar
       {/* Stats summary */}
       <div className="issue-stats-summary">
         <div className="issue-stat">
+          <span className="issue-stat-label">Min</span>
           <span className="issue-stat-value">{stats.min}</span>
-          <span className="issue-stat-label">Minimum</span>
         </div>
         <div className="issue-stat">
+          <span className="issue-stat-label">Avg</span>
           <span className="issue-stat-value">{stats.avg}</span>
-          <span className="issue-stat-label">Average</span>
         </div>
         <div className="issue-stat">
+          <span className="issue-stat-label">Max</span>
           <span className="issue-stat-value">{stats.max}</span>
-          <span className="issue-stat-label">Maximum</span>
         </div>
       </div>
 
