@@ -2468,8 +2468,161 @@ async function handleBusFactor(request: Request, env: Env): Promise<Response> {
 // Issue Triage
 // ============================================================================
 
-// Labels that indicate an issue is blocked/waiting (not untriaged)
-const BLOCKING_LABELS = [
+// GitHub Project V2 configuration
+const PROJECT_ORG = 'cloudflare';
+const PROJECT_NUMBER = 1; // https://github.com/orgs/cloudflare/projects/1
+
+// KV key for project statuses (short cache)
+const PROJECT_STATUSES_KV_KEY = 'project-statuses';
+const PROJECT_STATUSES_CACHE_TTL = 5 * 60; // 5 minutes
+
+interface ProjectItemStatus {
+  issueNumber: number;
+  status: string | null;
+}
+
+interface ProjectStatusesCache {
+  statuses: Record<number, string | null>; // issueNumber -> status
+  cachedAt: string;
+}
+
+// GraphQL query to fetch project items with their status
+function getProjectItemsQuery(): string {
+  return `
+    query($org: String!, $projectNumber: Int!, $cursor: String) {
+      organization(login: $org) {
+        projectV2(number: $projectNumber) {
+          items(first: 100, after: $cursor) {
+            pageInfo {
+              hasNextPage
+              endCursor
+            }
+            nodes {
+              content {
+                ... on Issue {
+                  number
+                }
+              }
+              fieldValueByName(name: "Status") {
+                ... on ProjectV2ItemFieldSingleSelectValue {
+                  name
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  `;
+}
+
+// Fetch all project item statuses from GitHub
+async function fetchProjectStatuses(env: Env): Promise<Record<number, string | null>> {
+  if (!env.GITHUB_TOKEN) {
+    throw new Error('GITHUB_TOKEN not configured');
+  }
+
+  const statuses: Record<number, string | null> = {};
+  let cursor: string | null = null;
+  let pageCount = 0;
+  const maxPages = 50; // Safety limit
+
+  console.log(`Fetching project statuses from ${PROJECT_ORG}/projects/${PROJECT_NUMBER}...`);
+
+  while (pageCount < maxPages) {
+    pageCount++;
+    
+    const response = await fetch('https://api.github.com/graphql', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${env.GITHUB_TOKEN}`,
+        'Content-Type': 'application/json',
+        'User-Agent': 'workers-sdk-ci-analyzer'
+      },
+      body: JSON.stringify({
+        query: getProjectItemsQuery(),
+        variables: {
+          org: PROJECT_ORG,
+          projectNumber: PROJECT_NUMBER,
+          cursor
+        }
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(`GitHub API error: ${response.status} ${response.statusText}`);
+    }
+
+    const result = await response.json() as any;
+    
+    if (result.errors) {
+      console.error('GraphQL errors:', result.errors);
+      throw new Error(`GraphQL error: ${result.errors[0]?.message || 'Unknown error'}`);
+    }
+
+    const project = result.data?.organization?.projectV2;
+    if (!project) {
+      throw new Error('Project not found or no access');
+    }
+
+    const items = project.items;
+    
+    for (const item of items.nodes) {
+      // Only process items that are issues (have a number)
+      if (item.content?.number) {
+        const issueNumber = item.content.number;
+        const status = item.fieldValueByName?.name || null;
+        statuses[issueNumber] = status;
+      }
+    }
+
+    if (!items.pageInfo.hasNextPage) {
+      break;
+    }
+    cursor = items.pageInfo.endCursor;
+  }
+
+  console.log(`Fetched ${Object.keys(statuses).length} project item statuses`);
+  return statuses;
+}
+
+// Load project statuses from cache or fetch fresh
+async function getProjectStatuses(env: Env, forceRefresh: boolean = false): Promise<Record<number, string | null>> {
+  // Try to load from cache first
+  if (!forceRefresh) {
+    try {
+      const cached = await env.CI_DATA_KV.get(PROJECT_STATUSES_KV_KEY, 'json') as ProjectStatusesCache | null;
+      if (cached) {
+        const cacheAge = Date.now() - new Date(cached.cachedAt).getTime();
+        if (cacheAge < PROJECT_STATUSES_CACHE_TTL * 1000) {
+          console.log(`Using cached project statuses (${Math.round(cacheAge / 1000)}s old)`);
+          return cached.statuses;
+        }
+        console.log(`Project statuses cache expired (${Math.round(cacheAge / 1000)}s old)`);
+      }
+    } catch (err) {
+      console.error('Error loading cached project statuses:', err);
+    }
+  }
+
+  // Fetch fresh data
+  const statuses = await fetchProjectStatuses(env);
+  
+  // Cache the results
+  const cache: ProjectStatusesCache = {
+    statuses,
+    cachedAt: new Date().toISOString()
+  };
+  
+  await env.CI_DATA_KV.put(PROJECT_STATUSES_KV_KEY, JSON.stringify(cache), {
+    expirationTtl: PROJECT_STATUSES_CACHE_TTL * 2 // Keep in KV a bit longer than cache validity
+  });
+  
+  return statuses;
+}
+
+// Labels that block an issue from being "untriaged"
+const UNTRIAGED_BLOCKING_LABELS = [
   'awaiting reporter response',
   'needs reproduction',
   'awaiting Cloudflare response',
@@ -2488,6 +2641,15 @@ const AWAITING_CF_LABELS = [
   'awaiting Cloudflare response',
 ];
 
+// Project statuses that are considered "active" for awaiting dev/CF tabs
+const ACTIVE_PROJECT_STATUSES = [
+  'Untriaged',
+  'Backlog',
+  'In Progress',
+  'In Review',
+  'Approved',
+];
+
 // Handle issue triage API: GET /api/issue-triage
 async function handleIssueTriage(request: Request, env: Env): Promise<Response> {
   try {
@@ -2499,6 +2661,7 @@ async function handleIssueTriage(request: Request, env: Env): Promise<Response> 
       return new Response(JSON.stringify({
         untriaged: [],
         awaitingDev: [],
+        awaitingCF: [],
         message: 'No GitHub data available. Please trigger a sync first.',
         needsSync: true
       }), {
@@ -2510,44 +2673,61 @@ async function handleIssueTriage(request: Request, env: Env): Promise<Response> 
       });
     }
     
+    // Fetch project statuses (fresh or from short-lived cache)
+    let projectStatuses: Record<number, string | null> = {};
+    try {
+      projectStatuses = await getProjectStatuses(env);
+    } catch (err) {
+      console.error('Failed to fetch project statuses, continuing without:', err);
+      // Continue without project statuses - issues not in project won't appear in results
+    }
+    
     // Filter to only open issues (not PRs)
     const openIssues = Object.values(items).filter(
       item => item.type === 'issue' && item.state === 'open'
     );
     
-    // Categorize issues
+    // Categorize issues based on project status + labels
     const untriaged: GitHubItem[] = [];
     const awaitingDev: GitHubItem[] = [];
     const awaitingCF: GitHubItem[] = [];
     
     for (const issue of openIssues) {
       const labelNames = issue.labels.map(l => l.name.toLowerCase());
+      const projectStatus = projectStatuses[issue.number];
       
-      // Check if issue has any blocking labels
-      const hasBlockingLabel = BLOCKING_LABELS.some(
-        blockingLabel => labelNames.includes(blockingLabel.toLowerCase())
+      // Check label conditions
+      const hasBlockingLabel = UNTRIAGED_BLOCKING_LABELS.some(
+        label => labelNames.includes(label.toLowerCase())
       );
-      
-      // Check if issue has any awaiting dev labels
       const hasAwaitingDevLabel = AWAITING_DEV_LABELS.some(
-        awaitingLabel => labelNames.includes(awaitingLabel.toLowerCase())
+        label => labelNames.includes(label.toLowerCase())
       );
-      
-      // Check if issue has any awaiting CF labels
       const hasAwaitingCFLabel = AWAITING_CF_LABELS.some(
-        awaitingLabel => labelNames.includes(awaitingLabel.toLowerCase())
+        label => labelNames.includes(label.toLowerCase())
       );
       
-      if (hasAwaitingCFLabel) {
-        awaitingCF.push(issue);
-      } else if (hasAwaitingDevLabel) {
-        awaitingDev.push(issue);
-      } else if (!hasBlockingLabel) {
+      // Check project status conditions
+      const isUntriagedStatus = projectStatus === 'Untriaged';
+      const isActiveStatus = projectStatus && ACTIVE_PROJECT_STATUSES.includes(projectStatus);
+      
+      // Untriaged: status:Untriaged AND no blocking labels
+      if (isUntriagedStatus && !hasBlockingLabel) {
         untriaged.push(issue);
+      }
+      
+      // Awaiting Dev: has awaiting dev labels AND has active project status
+      if (hasAwaitingDevLabel && isActiveStatus) {
+        awaitingDev.push(issue);
+      }
+      
+      // Awaiting CF: has "awaiting Cloudflare response" label AND has active project status
+      if (hasAwaitingCFLabel && isActiveStatus) {
+        awaitingCF.push(issue);
       }
     }
     
-    // Sort by created date (newest first)
+    // Sort: untriaged by created date (newest first), others by updated date
     untriaged.sort((a, b) => 
       new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
     );
@@ -2575,7 +2755,7 @@ async function handleIssueTriage(request: Request, env: Env): Promise<Response> 
       headers: {
         'Content-Type': 'application/json',
         'Access-Control-Allow-Origin': '*',
-        'Cache-Control': 'public, max-age=300'
+        'Cache-Control': 'public, max-age=60' // Shorter cache since project statuses change frequently
       }
     });
   } catch (error: any) {
