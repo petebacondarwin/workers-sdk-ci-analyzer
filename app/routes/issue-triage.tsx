@@ -11,15 +11,17 @@ export function meta({}: Route.MetaArgs) {
   ];
 }
 
-type TabType = 'untriaged' | 'awaiting-dev';
+type TabType = 'untriaged' | 'awaiting-dev' | 'awaiting-cf';
 
 export default function IssueTriage() {
   const [activeTab, setActiveTab] = useState<TabType>('untriaged');
   const { 
     untriaged, 
-    awaitingDev, 
+    awaitingDev,
+    awaitingCF,
     totalUntriaged,
     totalAwaitingDev,
+    totalAwaitingCF,
     lastSync,
     loading, 
     error,
@@ -105,32 +107,53 @@ export default function IssueTriage() {
           Awaiting Dev
           <span className="triage-tab-count">{totalAwaitingDev}</span>
         </button>
+        <button
+          onClick={() => setActiveTab('awaiting-cf')}
+          className={`triage-tab ${activeTab === 'awaiting-cf' ? 'active' : ''}`}
+        >
+          Awaiting CF
+          <span className="triage-tab-count">{totalAwaitingCF}</span>
+        </button>
       </div>
 
       <div className="triage-description">
-        {activeTab === 'untriaged' ? (
+        {activeTab === 'untriaged' && (
           <p>
             Open issues without blocking labels (awaiting reporter response, needs reproduction, 
             awaiting Cloudflare response, or blocked). These need initial triage.
           </p>
-        ) : (
+        )}
+        {activeTab === 'awaiting-dev' && (
           <p>
             Issues with "awaiting reporter response", "needs reproduction", or similar labels.
             These may need follow-up action.
           </p>
         )}
+        {activeTab === 'awaiting-cf' && (
+          <p>
+            Issues with "awaiting Cloudflare response" label. These are waiting for internal 
+            Cloudflare teams to provide information or fixes.
+          </p>
+        )}
       </div>
 
       <div className="triage-content">
-        {activeTab === 'untriaged' ? (
+        {activeTab === 'untriaged' && (
           <IssueTriageList 
             issues={untriaged} 
             emptyMessage="No untriaged issues found."
           />
-        ) : (
+        )}
+        {activeTab === 'awaiting-dev' && (
           <IssueTriageList 
             issues={awaitingDev} 
             emptyMessage="No issues awaiting dev attention."
+          />
+        )}
+        {activeTab === 'awaiting-cf' && (
+          <IssueTriageList 
+            issues={awaitingCF} 
+            emptyMessage="No issues awaiting Cloudflare response."
           />
         )}
       </div>

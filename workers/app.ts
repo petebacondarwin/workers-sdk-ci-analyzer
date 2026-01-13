@@ -2344,6 +2344,11 @@ const AWAITING_DEV_LABELS = [
   'awaiting dev response',
 ];
 
+// Labels that indicate an issue is awaiting Cloudflare response
+const AWAITING_CF_LABELS = [
+  'awaiting Cloudflare response',
+];
+
 // Handle issue triage API: GET /api/issue-triage
 async function handleIssueTriage(request: Request, env: Env): Promise<Response> {
   try {
@@ -2374,6 +2379,7 @@ async function handleIssueTriage(request: Request, env: Env): Promise<Response> 
     // Categorize issues
     const untriaged: GitHubItem[] = [];
     const awaitingDev: GitHubItem[] = [];
+    const awaitingCF: GitHubItem[] = [];
     
     for (const issue of openIssues) {
       const labelNames = issue.labels.map(l => l.name.toLowerCase());
@@ -2388,7 +2394,14 @@ async function handleIssueTriage(request: Request, env: Env): Promise<Response> 
         awaitingLabel => labelNames.includes(awaitingLabel.toLowerCase())
       );
       
-      if (hasAwaitingDevLabel) {
+      // Check if issue has any awaiting CF labels
+      const hasAwaitingCFLabel = AWAITING_CF_LABELS.some(
+        awaitingLabel => labelNames.includes(awaitingLabel.toLowerCase())
+      );
+      
+      if (hasAwaitingCFLabel) {
+        awaitingCF.push(issue);
+      } else if (hasAwaitingDevLabel) {
         awaitingDev.push(issue);
       } else if (!hasBlockingLabel) {
         untriaged.push(issue);
@@ -2402,16 +2415,22 @@ async function handleIssueTriage(request: Request, env: Env): Promise<Response> 
     awaitingDev.sort((a, b) => 
       new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
     );
+    awaitingCF.sort((a, b) => 
+      new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+    );
     
     // Limit to top 100 each
     const limitedUntriaged = untriaged.slice(0, 100);
     const limitedAwaitingDev = awaitingDev.slice(0, 100);
+    const limitedAwaitingCF = awaitingCF.slice(0, 100);
     
     return new Response(JSON.stringify({
       untriaged: limitedUntriaged,
       awaitingDev: limitedAwaitingDev,
+      awaitingCF: limitedAwaitingCF,
       totalUntriaged: untriaged.length,
       totalAwaitingDev: awaitingDev.length,
+      totalAwaitingCF: awaitingCF.length,
       lastSync: meta.lastSync
     }), {
       headers: {

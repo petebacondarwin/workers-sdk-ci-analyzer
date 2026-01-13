@@ -21,8 +21,10 @@ export interface TriageIssue {
 interface IssueTriageResponse {
   untriaged: TriageIssue[];
   awaitingDev: TriageIssue[];
+  awaitingCF: TriageIssue[];
   totalUntriaged: number;
   totalAwaitingDev: number;
+  totalAwaitingCF: number;
   lastSync: string;
   message?: string;
   needsSync?: boolean;
@@ -32,8 +34,10 @@ interface IssueTriageResponse {
 export function useIssueTriage() {
   const [untriaged, setUntriaged] = useState<TriageIssue[]>([]);
   const [awaitingDev, setAwaitingDev] = useState<TriageIssue[]>([]);
+  const [awaitingCF, setAwaitingCF] = useState<TriageIssue[]>([]);
   const [totalUntriaged, setTotalUntriaged] = useState(0);
   const [totalAwaitingDev, setTotalAwaitingDev] = useState(0);
+  const [totalAwaitingCF, setTotalAwaitingCF] = useState(0);
   const [lastSync, setLastSync] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -63,8 +67,10 @@ export function useIssueTriage() {
       
       setUntriaged(result.untriaged || []);
       setAwaitingDev(result.awaitingDev || []);
+      setAwaitingCF(result.awaitingCF || []);
       setTotalUntriaged(result.totalUntriaged || 0);
       setTotalAwaitingDev(result.totalAwaitingDev || 0);
+      setTotalAwaitingCF(result.totalAwaitingCF || 0);
       setLastSync(result.lastSync || null);
       setNeedsSync(false);
     } catch (err) {
@@ -82,8 +88,10 @@ export function useIssueTriage() {
   return { 
     untriaged,
     awaitingDev,
+    awaitingCF,
     totalUntriaged,
     totalAwaitingDev,
+    totalAwaitingCF,
     lastSync,
     loading, 
     error,
