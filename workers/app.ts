@@ -1195,6 +1195,7 @@ interface GitHubItem {
     color: string;
   }>;
   commentCount: number;
+  isDraft?: boolean; // Only for PRs
 }
 
 // Metadata stored alongside items
@@ -1235,6 +1236,7 @@ interface GitHubGraphQLPRNode {
   title: string;
   state: 'OPEN' | 'CLOSED' | 'MERGED';
   merged: boolean;
+  isDraft: boolean;
   createdAt: string;
   closedAt: string | null;
   mergedAt: string | null;
@@ -1378,6 +1380,7 @@ function getPRsQuery(): string {
             title
             state
             merged
+            isDraft
             createdAt
             closedAt
             mergedAt
@@ -1421,6 +1424,7 @@ function getPRsUpdatedQuery(): string {
             title
             state
             merged
+            isDraft
             createdAt
             closedAt
             mergedAt
@@ -1480,7 +1484,8 @@ function transformPRNode(node: GitHubGraphQLPRNode): GitHubItem {
     updatedAt: node.updatedAt,
     author: node.author,
     labels: node.labels.nodes,
-    commentCount: node.comments.totalCount
+    commentCount: node.comments.totalCount,
+    isDraft: node.isDraft
   };
 }
 
@@ -2869,9 +2874,9 @@ async function handlePRHealth(request: Request, env: Env): Promise<Response> {
     
     const now = Date.now();
     
-    // Filter to open PRs only and calculate health metrics
+    // Filter to open, non-draft PRs only and calculate health metrics
     let prs: PRHealthItem[] = Object.values(items)
-      .filter(item => item.type === 'pr' && item.state === 'open')
+      .filter(item => item.type === 'pr' && item.state === 'open' && !item.isDraft)
       .map(item => {
         const createdAt = new Date(item.createdAt).getTime();
         const updatedAt = new Date(item.updatedAt).getTime();
