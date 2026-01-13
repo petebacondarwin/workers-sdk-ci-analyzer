@@ -1145,6 +1145,25 @@ footer p {
   color: var(--text-muted);
 }
 
+/* Refreshing indicator */
+.refreshing-note {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--primary-color) !important;
+}
+
+.refreshing-indicator {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--border-color);
+  border-top: 2px solid var(--primary-color);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
 /* Sync Banner */
 .sync-banner {
   background-color: rgba(234, 179, 8, 0.1);

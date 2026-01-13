@@ -2322,33 +2322,52 @@ async function handleBusFactor(request: Request, env: Env): Promise<Response> {
   try {
     const url = new URL(request.url);
     const forceRefresh = url.searchParams.has('refresh');
+    const staleOnly = url.searchParams.has('stale-only');
 
-    // Check cache first (unless force refresh)
-    if (!forceRefresh) {
-      const cached = await env.CI_DATA_KV.get(BUS_FACTOR_CACHE_KV_KEY, 'json') as {
-        data: BusFactorResult[];
-        teamMembers: string[];
-        timestamp: string;
-      } | null;
+    // Check cache first
+    const cached = await env.CI_DATA_KV.get(BUS_FACTOR_CACHE_KV_KEY, 'json') as {
+      data: BusFactorResult[];
+      teamMembers: string[];
+      timestamp: string;
+    } | null;
 
-      if (cached) {
-        const cacheAge = Date.now() - new Date(cached.timestamp).getTime();
-        const oneHour = 60 * 60 * 1000;
+    if (cached) {
+      const cacheAge = Date.now() - new Date(cached.timestamp).getTime();
+      const oneHour = 60 * 60 * 1000;
+      const isStale = cacheAge >= oneHour;
 
-        if (cacheAge < oneHour) {
-          return new Response(JSON.stringify({
-            data: cached.data,
-            teamMembers: cached.teamMembers,
-            cached: true,
-            cachedAt: cached.timestamp
-          }), {
-            headers: {
-              'Content-Type': 'application/json',
-              'Access-Control-Allow-Origin': '*',
-              'Cache-Control': 'public, max-age=300'
-            }
-          });
-        }
+      // If stale-only request, just return whether data is stale
+      if (staleOnly) {
+        return new Response(JSON.stringify({
+          data: cached.data,
+          teamMembers: cached.teamMembers,
+          cached: true,
+          stale: isStale,
+          cachedAt: cached.timestamp
+        }), {
+          headers: {
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*',
+            'Cache-Control': 'no-cache'
+          }
+        });
+      }
+
+      // Return fresh cached data immediately
+      if (!forceRefresh && !isStale) {
+        return new Response(JSON.stringify({
+          data: cached.data,
+          teamMembers: cached.teamMembers,
+          cached: true,
+          stale: false,
+          cachedAt: cached.timestamp
+        }), {
+          headers: {
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*',
+            'Cache-Control': 'public, max-age=300'
+          }
+        });
       }
     }
 

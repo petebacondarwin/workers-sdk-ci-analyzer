@@ -15,7 +15,7 @@ export function meta({}: Route.MetaArgs) {
 
 export default function BusFactor() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const { data, teamMembers, loading, error, lastUpdated, cached, refresh } = useBusFactor();
+  const { data, teamMembers, loading, refreshing, error, lastUpdated, cached, refresh } = useBusFactor();
 
   // Initialize view from URL params or default to 'directory'
   const [view, setView] = useState<'directory' | 'user'>(() => {
@@ -81,15 +81,21 @@ export default function BusFactor() {
       )}
 
       <div className="view-footer">
-        {cached && (
+        {refreshing && (
+          <p className="note refreshing-note">
+            <span className="refreshing-indicator"></span>
+            Refreshing data in background...
+          </p>
+        )}
+        {cached && !refreshing && (
           <p className="note">Using cached data. Results are refreshed hourly.</p>
         )}
         <p>
           Analyzes all commits in monitored directories.
         </p>
         <p>
-          <button onClick={refresh} className="sync-button" disabled={loading}>
-            {loading ? 'Analyzing...' : 'Refresh Analysis'}
+          <button onClick={refresh} className="sync-button" disabled={loading || refreshing}>
+            {loading ? 'Analyzing...' : refreshing ? 'Refreshing...' : 'Refresh Analysis'}
           </button>
         </p>
       </div>
