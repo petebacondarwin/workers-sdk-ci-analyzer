@@ -11,6 +11,7 @@ import {
   Legend,
   TimeScale,
 } from 'chart.js';
+import annotationPlugin from 'chartjs-plugin-annotation';
 import 'chartjs-adapter-date-fns';
 
 // Register Chart.js components
@@ -22,7 +23,8 @@ ChartJS.register(
   Title,
   Tooltip,
   Legend,
-  TimeScale
+  TimeScale,
+  annotationPlugin
 );
 
 interface IssueLabelChartProps {
@@ -55,6 +57,17 @@ export default function IssueLabelChart({ data, loading, error }: IssueLabelChar
   const allLabels = useMemo(() => {
     return ['total', ...Object.keys(data.labels).sort()];
   }, [data.labels]);
+
+  // Calculate stats for the total
+  const stats = useMemo(() => {
+    if (data.total.length === 0) {
+      return { min: 0, max: 0, avg: 0 };
+    }
+    const min = Math.min(...data.total);
+    const max = Math.max(...data.total);
+    const avg = data.total.reduce((sum, val) => sum + val, 0) / data.total.length;
+    return { min, max, avg: Math.round(avg * 10) / 10 };
+  }, [data.total]);
 
   // Filter labels based on search query
   const filteredLabels = useMemo(() => {
@@ -124,7 +137,7 @@ export default function IssueLabelChart({ data, loading, error }: IssueLabelChar
     return { datasets };
   }, [data, selectedLabels]);
 
-  const chartOptions: any = {
+  const chartOptions: any = useMemo(() => ({
     responsive: true,
     maintainAspectRatio: false,
     interaction: {
@@ -163,6 +176,29 @@ export default function IssueLabelChart({ data, loading, error }: IssueLabelChar
           },
         },
       },
+      annotation: selectedLabels.has('total') ? {
+        annotations: {
+          averageLine: {
+            type: 'line',
+            yMin: stats.avg,
+            yMax: stats.avg,
+            borderColor: 'rgba(255, 255, 255, 0.5)',
+            borderWidth: 2,
+            borderDash: [6, 4],
+            label: {
+              display: true,
+              content: `Avg: ${stats.avg}`,
+              position: 'end',
+              backgroundColor: 'rgba(26, 26, 26, 0.8)',
+              color: '#ffffff',
+              font: {
+                size: 11,
+              },
+              padding: 4,
+            },
+          },
+        },
+      } : {},
     },
     scales: {
       x: {
@@ -196,7 +232,7 @@ export default function IssueLabelChart({ data, loading, error }: IssueLabelChar
         },
       },
     },
-  };
+  }), [stats.avg, selectedLabels]);
 
   if (loading) {
     return (
@@ -226,6 +262,22 @@ export default function IssueLabelChart({ data, loading, error }: IssueLabelChar
 
   return (
     <div className="issue-label-chart">
+      {/* Stats summary */}
+      <div className="issue-stats-summary">
+        <div className="issue-stat">
+          <span className="issue-stat-value">{stats.min}</span>
+          <span className="issue-stat-label">Minimum</span>
+        </div>
+        <div className="issue-stat">
+          <span className="issue-stat-value">{stats.avg}</span>
+          <span className="issue-stat-label">Average</span>
+        </div>
+        <div className="issue-stat">
+          <span className="issue-stat-value">{stats.max}</span>
+          <span className="issue-stat-label">Maximum</span>
+        </div>
+      </div>
+
       <div className="chart-layout">
         {/* Left sidebar - Label filters */}
         <div className="label-filter-sidebar">
