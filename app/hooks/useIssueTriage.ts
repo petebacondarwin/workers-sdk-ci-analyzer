@@ -16,6 +16,15 @@ export interface TriageIssue {
     name: string;
     color: string;
   }>;
+  ageDays: number;
+  staleDays: number;
+}
+
+export interface TriageStats {
+  avgAgeDays: number;
+  avgStaleDays: number;
+  staleCount: number;      // > 14 days
+  veryStaleCount: number;  // > 30 days
 }
 
 interface IssueTriageResponse {
@@ -25,11 +34,23 @@ interface IssueTriageResponse {
   totalUntriaged: number;
   totalAwaitingDev: number;
   totalAwaitingCF: number;
+  stats: {
+    untriaged: TriageStats;
+    awaitingDev: TriageStats;
+    awaitingCF: TriageStats;
+  };
   lastSync: string;
   message?: string;
   needsSync?: boolean;
   error?: string;
 }
+
+const defaultStats: TriageStats = {
+  avgAgeDays: 0,
+  avgStaleDays: 0,
+  staleCount: 0,
+  veryStaleCount: 0,
+};
 
 export function useIssueTriage() {
   const [untriaged, setUntriaged] = useState<TriageIssue[]>([]);
@@ -38,6 +59,15 @@ export function useIssueTriage() {
   const [totalUntriaged, setTotalUntriaged] = useState(0);
   const [totalAwaitingDev, setTotalAwaitingDev] = useState(0);
   const [totalAwaitingCF, setTotalAwaitingCF] = useState(0);
+  const [stats, setStats] = useState<{
+    untriaged: TriageStats;
+    awaitingDev: TriageStats;
+    awaitingCF: TriageStats;
+  }>({
+    untriaged: defaultStats,
+    awaitingDev: defaultStats,
+    awaitingCF: defaultStats,
+  });
   const [lastSync, setLastSync] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -71,6 +101,11 @@ export function useIssueTriage() {
       setTotalUntriaged(result.totalUntriaged || 0);
       setTotalAwaitingDev(result.totalAwaitingDev || 0);
       setTotalAwaitingCF(result.totalAwaitingCF || 0);
+      setStats(result.stats || {
+        untriaged: defaultStats,
+        awaitingDev: defaultStats,
+        awaitingCF: defaultStats,
+      });
       setLastSync(result.lastSync || null);
       setNeedsSync(false);
     } catch (err) {
@@ -92,6 +127,7 @@ export function useIssueTriage() {
     totalUntriaged,
     totalAwaitingDev,
     totalAwaitingCF,
+    stats,
     lastSync,
     loading, 
     error,

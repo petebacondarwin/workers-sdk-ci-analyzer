@@ -1888,6 +1888,18 @@ footer p {
   color: var(--text-muted);
 }
 
+.triage-stats {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 20px;
+}
+
+.triage-stats .stat-card {
+  flex: 1;
+  min-width: 100px;
+}
+
 .triage-content {
   margin-bottom: 30px;
 }
@@ -1925,7 +1937,17 @@ footer p {
 }
 
 .triage-item-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
   margin-bottom: 6px;
+}
+
+.triage-item-badges {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
 }
 
 .triage-item-link {

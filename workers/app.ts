@@ -2727,21 +2727,68 @@ async function handleIssueTriage(request: Request, env: Env): Promise<Response> 
       }
     }
     
+    // Helper to calculate days between two dates
+    const daysBetween = (date1: Date, date2: Date): number => {
+      return Math.floor((date2.getTime() - date1.getTime()) / (1000 * 60 * 60 * 24));
+    };
+    
+    // Helper to add age/staleness to issues
+    const now = new Date();
+    const enrichWithStats = (issues: GitHubItem[]) => {
+      return issues.map(issue => ({
+        ...issue,
+        ageDays: daysBetween(new Date(issue.createdAt), now),
+        staleDays: daysBetween(new Date(issue.updatedAt), now),
+      }));
+    };
+    
+    // Helper to calculate stats for a list of issues
+    const calculateStats = (issues: Array<{ ageDays: number; staleDays: number }>) => {
+      if (issues.length === 0) {
+        return {
+          avgAgeDays: 0,
+          avgStaleDays: 0,
+          staleCount: 0,
+          veryStaleCount: 0,
+        };
+      }
+      
+      const totalAge = issues.reduce((sum, i) => sum + i.ageDays, 0);
+      const totalStale = issues.reduce((sum, i) => sum + i.staleDays, 0);
+      
+      return {
+        avgAgeDays: Math.round(totalAge / issues.length),
+        avgStaleDays: Math.round(totalStale / issues.length),
+        staleCount: issues.filter(i => i.staleDays > 14).length,
+        veryStaleCount: issues.filter(i => i.staleDays > 30).length,
+      };
+    };
+    
+    // Enrich issues with age/staleness data
+    const enrichedUntriaged = enrichWithStats(untriaged);
+    const enrichedAwaitingDev = enrichWithStats(awaitingDev);
+    const enrichedAwaitingCF = enrichWithStats(awaitingCF);
+    
     // Sort: untriaged by created date (newest first), others by updated date
-    untriaged.sort((a, b) => 
+    enrichedUntriaged.sort((a, b) => 
       new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
     );
-    awaitingDev.sort((a, b) => 
+    enrichedAwaitingDev.sort((a, b) => 
       new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
     );
-    awaitingCF.sort((a, b) => 
+    enrichedAwaitingCF.sort((a, b) => 
       new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
     );
     
+    // Calculate stats for each category
+    const untriagedStats = calculateStats(enrichedUntriaged);
+    const awaitingDevStats = calculateStats(enrichedAwaitingDev);
+    const awaitingCFStats = calculateStats(enrichedAwaitingCF);
+    
     // Limit to top 100 each
-    const limitedUntriaged = untriaged.slice(0, 100);
-    const limitedAwaitingDev = awaitingDev.slice(0, 100);
-    const limitedAwaitingCF = awaitingCF.slice(0, 100);
+    const limitedUntriaged = enrichedUntriaged.slice(0, 100);
+    const limitedAwaitingDev = enrichedAwaitingDev.slice(0, 100);
+    const limitedAwaitingCF = enrichedAwaitingCF.slice(0, 100);
     
     return new Response(JSON.stringify({
       untriaged: limitedUntriaged,
@@ -2750,6 +2797,11 @@ async function handleIssueTriage(request: Request, env: Env): Promise<Response> 
       totalUntriaged: untriaged.length,
       totalAwaitingDev: awaitingDev.length,
       totalAwaitingCF: awaitingCF.length,
+      stats: {
+        untriaged: untriagedStats,
+        awaitingDev: awaitingDevStats,
+        awaitingCF: awaitingCFStats,
+      },
       lastSync: meta.lastSync
     }), {
       headers: {

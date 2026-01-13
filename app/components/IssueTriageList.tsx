@@ -5,6 +5,32 @@ interface IssueTriageListProps {
   emptyMessage?: string;
 }
 
+const getStalenessClass = (days: number): string => {
+  if (days > 30) return 'staleness-critical';
+  if (days > 14) return 'staleness-warning';
+  if (days > 7) return 'staleness-moderate';
+  return 'staleness-fresh';
+};
+
+const getAgeClass = (days: number): string => {
+  if (days > 90) return 'age-ancient';
+  if (days > 30) return 'age-old';
+  if (days > 14) return 'age-moderate';
+  return 'age-new';
+};
+
+const formatDays = (days: number): string => {
+  if (days === 0) return 'Today';
+  if (days === 1) return '1 day';
+  if (days < 7) return `${days} days`;
+  if (days < 30) {
+    const weeks = Math.floor(days / 7);
+    return weeks === 1 ? '1 week' : `${weeks} weeks`;
+  }
+  const months = Math.floor(days / 30);
+  return months === 1 ? '1 month' : `${months} months`;
+};
+
 export default function IssueTriageList({ issues, emptyMessage }: IssueTriageListProps) {
   if (issues.length === 0) {
     return (
@@ -27,6 +53,20 @@ export default function IssueTriageList({ issues, emptyMessage }: IssueTriageLis
             >
               #{issue.number} {issue.title}
             </a>
+            <div className="triage-item-badges">
+              <span 
+                className={`staleness-badge ${getStalenessClass(issue.staleDays)}`}
+                title="Time since last update"
+              >
+                {formatDays(issue.staleDays)} stale
+              </span>
+              <span 
+                className={`age-badge ${getAgeClass(issue.ageDays)}`}
+                title="Age since creation"
+              >
+                {formatDays(issue.ageDays)} old
+              </span>
+            </div>
           </div>
 
           <div className="triage-item-meta">
