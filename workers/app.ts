@@ -63,6 +63,11 @@ export default {
       return handleIssueLabelStats(request, env);
     }
     
+    // PR label statistics endpoint
+    if (url.pathname === '/api/pr-label-stats') {
+      return handlePRLabelStats(request, env);
+    }
+    
     // Bus factor endpoint
     if (url.pathname === '/api/bus-factor') {
       return handleBusFactor(request, env);
@@ -2086,6 +2091,68 @@ function calculateDailyLabelCounts(
   }
   
   return { timestamps, total, labels };
+}
+
+// ============================================================================
+// PR Label Statistics
+// ============================================================================
+
+// Handle PR label stats API: GET /api/pr-label-stats?start=<date>&end=<date>
+// Computes historical PR counts by label from the synced GitHub items
+async function handlePRLabelStats(request: Request, env: Env): Promise<Response> {
+  try {
+    const url = new URL(request.url);
+    const startParam = url.searchParams.get('start');
+    const endParam = url.searchParams.get('end');
+    
+    // Load all GitHub items from KV
+    const items = await loadGitHubItemsFromKV(env);
+    const meta = await loadGitHubItemsMetaFromKV(env);
+    
+    if (!meta || Object.keys(items).length === 0) {
+      return new Response(JSON.stringify({
+        timestamps: [],
+        total: [],
+        labels: {},
+        message: 'No GitHub data available. Please trigger a sync first.',
+        needsSync: true
+      }), {
+        headers: {
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': '*',
+          'Cache-Control': 'public, max-age=300'
+        }
+      });
+    }
+    
+    // Filter to only PRs (not issues)
+    const prs = Object.values(items).filter(item => item.type === 'pr');
+    
+    // Determine date range
+    const endDate = endParam ? new Date(endParam) : new Date();
+    const startDate = startParam ? new Date(startParam) : new Date(endDate.getTime() - 30 * 24 * 60 * 60 * 1000);
+    
+    // Generate daily data points (reuse the same calculation function)
+    const dataPoints = calculateDailyLabelCounts(prs, startDate, endDate);
+    
+    return new Response(JSON.stringify({
+      ...dataPoints,
+      lastSync: meta.lastSync,
+      totalPRs: prs.length
+    }), {
+      headers: {
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*',
+        'Cache-Control': 'public, max-age=300'
+      }
+    });
+  } catch (error: any) {
+    console.error('Error fetching PR label stats:', error);
+    return new Response(JSON.stringify({ error: error.message }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+    });
+  }
 }
 
 // ============================================================================
