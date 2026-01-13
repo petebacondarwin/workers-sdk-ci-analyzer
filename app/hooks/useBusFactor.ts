@@ -11,9 +11,15 @@ export interface BusFactorData {
   teamMemberContributions: Record<string, number>;
 }
 
+export interface TeamMember {
+  login: string;
+  name: string | null;
+  avatarUrl: string;
+}
+
 interface BusFactorResponse {
   data: BusFactorData[];
-  teamMembers: string[];
+  teamMembers: TeamMember[];
   cached: boolean;
   stale?: boolean;
   cachedAt?: string;
@@ -23,7 +29,7 @@ interface BusFactorResponse {
 
 export function useBusFactor() {
   const [data, setData] = useState<BusFactorData[]>([]);
-  const [teamMembers, setTeamMembers] = useState<string[]>([]);
+  const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);

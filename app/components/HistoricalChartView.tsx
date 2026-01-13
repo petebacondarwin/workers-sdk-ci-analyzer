@@ -55,7 +55,7 @@ export default function HistoricalChartView({ dateRange }: HistoricalChartViewPr
           throw new Error(`HTTP error! status: ${response.status}`);
         }
         
-        const result = await response.json();
+        const result = await response.json() as { snapshots?: HistoricalSnapshot[] };
         const allSnapshots = result.snapshots || [];
         
         setSnapshots(allSnapshots);

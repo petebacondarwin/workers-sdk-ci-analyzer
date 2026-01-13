@@ -38,7 +38,7 @@ export default function IssueTriage() {
     
     try {
       const response = await fetch('/api/sync-github-items', { method: 'POST' });
-      const result = await response.json();
+      const result = await response.json() as { success: boolean; newItems?: number; updatedItems?: number; error?: string };
       
       if (result.success) {
         setSyncMessage(`Sync complete! ${result.newItems} new, ${result.updatedItems} updated items.`);

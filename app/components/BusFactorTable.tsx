@@ -1,13 +1,18 @@
 import { useState, useMemo } from 'react';
-import type { BusFactorData } from '../hooks/useBusFactor';
+import type { BusFactorData, TeamMember } from '../hooks/useBusFactor';
 
 interface BusFactorTableProps {
   data: BusFactorData[];
-  teamMembers: string[];
+  teamMembers: TeamMember[];
   loading?: boolean;
   error?: string | null;
   lastUpdated?: string | null;
   onRefresh?: () => void;
+}
+
+// Helper to get display name for a team member
+function getDisplayName(member: TeamMember): string {
+  return member.name || member.login;
 }
 
 type SortKey = 'directory' | 'busFactor' | string; // string for team member names
@@ -33,7 +38,7 @@ export default function BusFactorTable({
       let totalContribution = 0;
 
       data.forEach((item) => {
-        const contribution = item.teamMemberContributions?.[member] || 0;
+        const contribution = item.teamMemberContributions?.[member.login] || 0;
         // Count directories where: bus factor <= 2 AND contribution >= 10%
         if (item.busFactor <= 2 && contribution >= 10) {
           criticalCount++;
@@ -93,20 +98,20 @@ export default function BusFactorTable({
     return 'bus-factor-healthy';
   };
 
-  // Find the highest contributor for each row
-  const getHighestContributor = (item: BusFactorData): string | null => {
+  // Find the highest contributor (by login) for each row
+  const getHighestContributorLogin = (item: BusFactorData): string | null => {
     let maxPercentage = 0;
-    let maxContributor: string | null = null;
+    let maxContributorLogin: string | null = null;
 
     sortedTeamMembers.forEach((member) => {
-      const percentage = item.teamMemberContributions?.[member] || 0;
+      const percentage = item.teamMemberContributions?.[member.login] || 0;
       if (percentage > maxPercentage) {
         maxPercentage = percentage;
-        maxContributor = member;
+        maxContributorLogin = member.login;
       }
     });
 
-    return maxPercentage > 0 ? maxContributor : null;
+    return maxPercentage > 0 ? maxContributorLogin : null;
   };
 
   if (loading) {
@@ -213,15 +218,22 @@ export default function BusFactorTable({
               </th>
               {sortedTeamMembers.map((member, index) => (
                 <th
-                  key={member}
+                  key={member.login}
                   className={`sortable center team-member-col ${index === 0 ? 'first-team-col' : ''}`}
-                  onClick={() => handleSort(member)}
+                  onClick={() => handleSort(member.login)}
                 >
                   <div className="th-content center">
-                    <span className="member-name" title={member}>
-                      {member}
+                    <img 
+                      src={member.avatarUrl} 
+                      alt={getDisplayName(member)} 
+                      className="member-avatar"
+                      width={24}
+                      height={24}
+                    />
+                    <span className="member-name" title={member.login}>
+                      {getDisplayName(member)}
                     </span>
-                    {sortKey === member && (
+                    {sortKey === member.login && (
                       <span className="sort-indicator">
                         {sortOrder === 'asc' ? ' ^' : ' v'}
                       </span>
@@ -233,7 +245,7 @@ export default function BusFactorTable({
           </thead>
           <tbody>
             {sortedData.map((item) => {
-              const highestContributor = getHighestContributor(item);
+              const highestContributorLogin = getHighestContributorLogin(item);
               return (
                 <tr key={item.directory}>
                   <td className="directory-cell">
@@ -253,10 +265,10 @@ export default function BusFactorTable({
                   </td>
                   {sortedTeamMembers.map((member, index) => (
                     <td
-                      key={member}
-                      className={`center team-member-cell ${index === 0 ? 'first-team-col' : ''} ${highestContributor === member ? 'highest-contributor' : ''}`}
+                      key={member.login}
+                      className={`center team-member-cell ${index === 0 ? 'first-team-col' : ''} ${highestContributorLogin === member.login ? 'highest-contributor' : ''}`}
                     >
-                      {(item.teamMemberContributions?.[member] || 0).toFixed(1)}%
+                      {(item.teamMemberContributions?.[member.login] || 0).toFixed(1)}%
                     </td>
                   ))}
                 </tr>

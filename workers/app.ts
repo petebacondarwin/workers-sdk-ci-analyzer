@@ -1086,10 +1086,17 @@ const FALLBACK_TEAM_MEMBERS = [
 // Members to exclude from the team list (e.g., bot accounts)
 const EXCLUDED_MEMBERS = ['workers-devprod'];
 
+// Team member info with display name and avatar
+interface TeamMember {
+  login: string;
+  name: string | null;
+  avatarUrl: string;
+}
+
 // Fetch team members from GitHub organization teams
-async function fetchTeamMembers(env: Env): Promise<string[]> {
+async function fetchTeamMembers(env: Env): Promise<TeamMember[]> {
   const teams = ['wrangler', 'wrangler-friends'];
-  const allMembers = new Set<string>();
+  const allMembers = new Map<string, TeamMember>();
 
   for (const team of teams) {
     try {
@@ -1103,10 +1110,14 @@ async function fetchTeamMembers(env: Env): Promise<string[]> {
       });
 
       if (response.ok) {
-        const members = await response.json() as Array<{ login: string }>;
+        const members = await response.json() as Array<{ login: string; avatar_url: string }>;
         members.forEach(member => {
-          if (!EXCLUDED_MEMBERS.includes(member.login)) {
-            allMembers.add(member.login);
+          if (!EXCLUDED_MEMBERS.includes(member.login) && !allMembers.has(member.login)) {
+            allMembers.set(member.login, {
+              login: member.login,
+              name: null, // Will be fetched separately
+              avatarUrl: member.avatar_url
+            });
           }
         });
         console.log(`Fetched ${members.length} members from team: ${team}`);
@@ -1118,13 +1129,52 @@ async function fetchTeamMembers(env: Env): Promise<string[]> {
     }
   }
 
+  // Fetch detailed user info to get real names
+  const membersList = Array.from(allMembers.values());
+  
+  // Fetch user details in batches to get real names
+  const batchSize = 10;
+  for (let i = 0; i < membersList.length; i += batchSize) {
+    const batch = membersList.slice(i, i + batchSize);
+    await Promise.all(batch.map(async (member) => {
+      try {
+        const userResponse = await fetch(`https://api.github.com/users/${member.login}`, {
+          headers: {
+            'Accept': 'application/vnd.github+json',
+            'User-Agent': 'Workers-SDK-CI-Analyzer',
+            ...(env.GITHUB_TOKEN ? { 'Authorization': `Bearer ${env.GITHUB_TOKEN}` } : {})
+          }
+        });
+        
+        if (userResponse.ok) {
+          const userData = await userResponse.json() as { name: string | null; avatar_url: string };
+          member.name = userData.name;
+          member.avatarUrl = userData.avatar_url;
+        }
+      } catch (error) {
+        console.error(`Error fetching user ${member.login}:`, error);
+      }
+    }));
+    
+    // Small delay between batches
+    if (i + batchSize < membersList.length) {
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+  }
+
   // If we got members from GitHub, return them; otherwise use fallback
-  if (allMembers.size > 0) {
-    return Array.from(allMembers).sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
+  if (membersList.length > 0) {
+    return membersList.sort((a, b) => 
+      (a.name || a.login).toLowerCase().localeCompare((b.name || b.login).toLowerCase())
+    );
   }
 
   console.warn('Using fallback team members list');
-  return FALLBACK_TEAM_MEMBERS;
+  return FALLBACK_TEAM_MEMBERS.map(login => ({
+    login,
+    name: null,
+    avatarUrl: `https://github.com/${login}.png`
+  }));
 }
 
 // Enhanced GitHub item stored in KV
@@ -2327,7 +2377,7 @@ async function handleBusFactor(request: Request, env: Env): Promise<Response> {
     // Check cache first
     const cached = await env.CI_DATA_KV.get(BUS_FACTOR_CACHE_KV_KEY, 'json') as {
       data: BusFactorResult[];
-      teamMembers: string[];
+      teamMembers: TeamMember[];
       timestamp: string;
     } | null;
 
@@ -2376,11 +2426,14 @@ async function handleBusFactor(request: Request, env: Env): Promise<Response> {
     const teamMembers = await fetchTeamMembers(env);
     console.log(`Found ${teamMembers.length} team members`);
 
+    // Extract logins for analysis
+    const teamMemberLogins = teamMembers.map(m => m.login);
+
     // Analyze all directories
     console.log('Analyzing bus factor for all monitored directories...');
-    const results = await analyzeAllDirectories(env, teamMembers);
+    const results = await analyzeAllDirectories(env, teamMemberLogins);
 
-    // Cache the results (including team members)
+    // Cache the results (including team members with full info)
     const cacheData = {
       data: results,
       teamMembers: teamMembers,

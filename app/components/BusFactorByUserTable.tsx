@@ -1,17 +1,24 @@
 import { useState, useMemo } from 'react';
-import type { BusFactorData } from '../hooks/useBusFactor';
+import type { BusFactorData, TeamMember } from '../hooks/useBusFactor';
 
 interface BusFactorByUserTableProps {
   data: BusFactorData[];
-  teamMembers: string[];
+  teamMembers: TeamMember[];
   loading?: boolean;
   error?: string | null;
   lastUpdated?: string | null;
   onRefresh?: () => void;
 }
 
+// Helper to get display name for a team member
+function getDisplayName(member: TeamMember): string {
+  return member.name || member.login;
+}
+
 interface UserBusFactorData {
-  user: string;
+  login: string;
+  displayName: string;
+  avatarUrl: string;
   criticalDirectories: Array<{
     directory: string;
     contribution: number;
@@ -42,8 +49,10 @@ export default function BusFactorByUserTable({
 
     // Initialize all team members
     teamMembers.forEach((member) => {
-      userMap.set(member, {
-        user: member,
+      userMap.set(member.login, {
+        login: member.login,
+        displayName: getDisplayName(member),
+        avatarUrl: member.avatarUrl,
         criticalDirectories: [],
         totalCriticalDirectories: 0,
         averageContribution: 0,
@@ -58,11 +67,11 @@ export default function BusFactorByUserTable({
       const isCriticalDirectory = item.busFactor <= 2;
 
       teamMembers.forEach((member) => {
-        const contribution = item.teamMemberContributions?.[member] || 0;
+        const contribution = item.teamMemberContributions?.[member.login] || 0;
         
         // User is critical if they have significant contribution in a critical directory
         if (isCriticalDirectory && contribution >= 10) {
-          const userData = userMap.get(member)!;
+          const userData = userMap.get(member.login)!;
           userData.criticalDirectories.push({
             directory: item.directory,
             contribution,
@@ -94,7 +103,7 @@ export default function BusFactorByUserTable({
       let comparison = 0;
 
       if (sortKey === 'user') {
-        comparison = a.user.localeCompare(b.user);
+        comparison = a.displayName.localeCompare(b.displayName);
       } else if (sortKey === 'criticalCount') {
         comparison = a.totalCriticalDirectories - b.totalCriticalDirectories;
       } else if (sortKey === 'avgContribution') {
@@ -243,9 +252,18 @@ export default function BusFactorByUserTable({
           </thead>
           <tbody>
             {sortedData.map((item) => (
-              <tr key={item.user}>
+              <tr key={item.login}>
                 <td className="user-cell">
-                  <code>{item.user}</code>
+                  <div className="user-info">
+                    <img 
+                      src={item.avatarUrl} 
+                      alt={item.displayName} 
+                      className="member-avatar"
+                      width={24}
+                      height={24}
+                    />
+                    <code title={item.login}>{item.displayName}</code>
+                  </div>
                 </td>
                 <td className="center">
                   <span className={`bus-factor-badge ${getCriticalCountClass(item.totalCriticalDirectories)}`}>
