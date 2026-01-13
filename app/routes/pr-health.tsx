@@ -12,7 +12,6 @@ export function meta({}: Route.MetaArgs) {
 }
 
 export default function PRHealth() {
-  const [stateFilter, setStateFilter] = useState<'open' | 'all'>('open');
   const [sortBy, setSortBy] = useState<SortKey>('stale');
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc');
 
@@ -25,7 +24,7 @@ export default function PRHealth() {
     error,
     needsSync,
     refetch 
-  } = usePRHealth(stateFilter, sortBy, sortOrder);
+  } = usePRHealth(sortBy, sortOrder);
 
   const [syncing, setSyncing] = useState(false);
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
@@ -99,19 +98,7 @@ export default function PRHealth() {
         </p>
       </div>
 
-      <div className="pr-health-controls">
-        <div className="filter-group">
-          <label>Show:</label>
-          <select 
-            value={stateFilter} 
-            onChange={(e) => setStateFilter(e.target.value as 'open' | 'all')}
-            className="filter-select"
-          >
-            <option value="open">Open PRs only</option>
-            <option value="all">All PRs</option>
-          </select>
-        </div>
-      </div>
+
 
       <PRHealthTable
         prs={prs}

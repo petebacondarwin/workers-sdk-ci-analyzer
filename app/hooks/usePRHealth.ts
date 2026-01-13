@@ -40,7 +40,6 @@ export type SortKey = 'stale' | 'age' | 'comments';
 export type SortOrder = 'asc' | 'desc';
 
 export function usePRHealth(
-  stateFilter: 'open' | 'all' = 'open',
   sortBy: SortKey = 'stale',
   order: SortOrder = 'desc'
 ) {
@@ -58,7 +57,6 @@ export function usePRHealth(
 
     try {
       const params = new URLSearchParams({
-        state: stateFilter,
         sort: sortBy,
         order: order
       });
@@ -91,7 +89,7 @@ export function usePRHealth(
     } finally {
       setLoading(false);
     }
-  }, [stateFilter, sortBy, order]);
+  }, [sortBy, order]);
 
   useEffect(() => {
     fetchData();

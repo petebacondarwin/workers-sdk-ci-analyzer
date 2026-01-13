@@ -2846,7 +2846,6 @@ interface PRHealthItem {
 async function handlePRHealth(request: Request, env: Env): Promise<Response> {
   try {
     const url = new URL(request.url);
-    const stateFilter = url.searchParams.get('state') || 'open';
     const sortBy = url.searchParams.get('sort') || 'stale'; // stale, age, comments
     const order = url.searchParams.get('order') || 'desc';
     
@@ -2870,13 +2869,9 @@ async function handlePRHealth(request: Request, env: Env): Promise<Response> {
     
     const now = Date.now();
     
-    // Filter to PRs and calculate health metrics
+    // Filter to open PRs only and calculate health metrics
     let prs: PRHealthItem[] = Object.values(items)
-      .filter(item => {
-        if (item.type !== 'pr') return false;
-        if (stateFilter === 'open') return item.state === 'open';
-        return true;
-      })
+      .filter(item => item.type === 'pr' && item.state === 'open')
       .map(item => {
         const createdAt = new Date(item.createdAt).getTime();
         const updatedAt = new Date(item.updatedAt).getTime();
