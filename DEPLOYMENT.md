@@ -44,9 +44,9 @@ wrangler kv:namespace list
 # ]
 ```
 
-### 2. Add GitHub Token (Optional but Recommended)
+### 2. Add GitHub Token (Required)
 
-Without a token, you're limited to 60 requests/hour. With a token, you get 5,000 requests/hour.
+A GitHub token is required for API access. Without a token, you're limited to 60 requests/hour. With a token, you get 5,000 requests/hour.
 
 ```bash
 wrangler secret put GITHUB_TOKEN
@@ -57,8 +57,15 @@ Then paste your GitHub Personal Access Token when prompted.
 **To create a GitHub token:**
 1. Go to https://github.com/settings/tokens
 2. Generate new token (classic)
-3. Select scope: `public_repo` (read access to public repositories)
+3. Select the following scopes:
+   - `public_repo` - Read access to public repositories (for issues, PRs, commits)
+   - `read:org` - Read organization membership (for fetching team members in Bus Factor analysis)
+   - `read:project` - Read access to organization projects (for Issue Triage project status filtering)
 4. Copy the token
+
+**Note:** The `read:org` and `read:project` scopes are required for full functionality. Without them:
+- Bus Factor analysis won't be able to fetch team members dynamically
+- Issue Triage won't filter by GitHub Project status
 
 ### 3. Manually Trigger Initial Data Fetch
 

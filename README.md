@@ -73,17 +73,16 @@ workers-sdk-ci-analyzer/
 npm install
 ```
 
-2. (Optional) Configure a GitHub token for higher rate limits:
-   - Create a GitHub Personal Access Token with `repo` scope
-   - Add it to your `wrangler.jsonc`:
-   ```jsonc
-   {
-     "vars": {
-       "GITHUB_TOKEN": "your_token_here"
-     }
-   }
+2. Configure a GitHub token (required for full functionality):
+   - Create a GitHub Personal Access Token (classic) with the following scopes:
+     - `public_repo` - Read access to public repositories
+     - `read:org` - Read organization membership (for Bus Factor team members)
+     - `read:project` - Read organization projects (for Issue Triage status filtering)
+   - For local development, create a `.dev.vars` file:
    ```
-   Or set it as a secret (recommended):
+   GITHUB_TOKEN=your_token_here
+   ```
+   - For production, set it as a secret (recommended):
    ```bash
    wrangler secret put GITHUB_TOKEN
    ```
