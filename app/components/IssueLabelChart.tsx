@@ -178,23 +178,61 @@ export default function IssueLabelChart({ data, loading, error }: IssueLabelChar
       },
       annotation: selectedLabels.has('total') ? {
         annotations: {
+          minLine: {
+            type: 'line',
+            yMin: stats.min,
+            yMax: stats.min,
+            borderColor: 'rgba(34, 197, 94, 0.6)', // green (success color)
+            borderWidth: 1.5,
+            borderDash: [4, 4],
+            label: {
+              display: true,
+              content: `Min: ${stats.min}`,
+              position: 'start',
+              backgroundColor: 'rgba(34, 197, 94, 0.8)',
+              color: '#ffffff',
+              font: {
+                size: 10,
+              },
+              padding: 3,
+            },
+          },
           averageLine: {
             type: 'line',
             yMin: stats.avg,
             yMax: stats.avg,
-            borderColor: 'rgba(255, 255, 255, 0.5)',
-            borderWidth: 2,
+            borderColor: 'rgba(234, 179, 8, 0.6)', // yellow/amber (warning color)
+            borderWidth: 1.5,
             borderDash: [6, 4],
             label: {
               display: true,
               content: `Avg: ${stats.avg}`,
+              position: 'center',
+              backgroundColor: 'rgba(234, 179, 8, 0.8)',
+              color: '#000000',
+              font: {
+                size: 10,
+              },
+              padding: 3,
+            },
+          },
+          maxLine: {
+            type: 'line',
+            yMin: stats.max,
+            yMax: stats.max,
+            borderColor: 'rgba(239, 68, 68, 0.6)', // red (danger color)
+            borderWidth: 1.5,
+            borderDash: [4, 4],
+            label: {
+              display: true,
+              content: `Max: ${stats.max}`,
               position: 'end',
-              backgroundColor: 'rgba(26, 26, 26, 0.8)',
+              backgroundColor: 'rgba(239, 68, 68, 0.8)',
               color: '#ffffff',
               font: {
-                size: 11,
+                size: 10,
               },
-              padding: 4,
+              padding: 3,
             },
           },
         },
@@ -262,22 +300,6 @@ export default function IssueLabelChart({ data, loading, error }: IssueLabelChar
 
   return (
     <div className="issue-label-chart">
-      {/* Stats summary */}
-      <div className="issue-stats-summary">
-        <div className="issue-stat">
-          <span className="issue-stat-label">Min</span>
-          <span className="issue-stat-value">{stats.min}</span>
-        </div>
-        <div className="issue-stat">
-          <span className="issue-stat-label">Avg</span>
-          <span className="issue-stat-value">{stats.avg}</span>
-        </div>
-        <div className="issue-stat">
-          <span className="issue-stat-label">Max</span>
-          <span className="issue-stat-value">{stats.max}</span>
-        </div>
-      </div>
-
       <div className="chart-layout">
         {/* Left sidebar - Label filters */}
         <div className="label-filter-sidebar">

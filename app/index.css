@@ -1310,37 +1310,6 @@ footer p {
   margin-bottom: 40px;
 }
 
-.issue-stats-summary {
-  display: flex;
-  gap: 15px;
-  margin-bottom: 15px;
-  justify-content: center;
-  align-items: center;
-}
-
-.issue-stat {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  background-color: var(--surface-color);
-  border: 1px solid var(--border-color);
-  border-radius: 6px;
-  padding: 6px 12px;
-}
-
-.issue-stat-label {
-  font-size: 0.75rem;
-  color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.3px;
-}
-
-.issue-stat-value {
-  font-size: 1rem;
-  font-weight: 700;
-  color: var(--primary-color);
-}
-
 .chart-layout {
   display: flex;
   gap: 20px;
