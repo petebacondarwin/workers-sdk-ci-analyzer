@@ -1018,30 +1018,45 @@ interface BusFactorResult {
 // Monitored directories for bus factor analysis
 const MONITORED_DIRECTORIES = [
   'packages/chrome-devtools-patches',
+  'packages/miniflare/src/plugins/ai',
+  'packages/miniflare/src/plugins/analytics-engine',
+  'packages/miniflare/src/plugins/assets',
+  'packages/miniflare/src/plugins/cache',
+  'packages/miniflare/src/plugins/core',
+  'packages/miniflare/src/plugins/d1',
+  'packages/miniflare/src/plugins/do',
+  'packages/miniflare/src/plugins/hyperdrive',
+  'packages/miniflare/src/plugins/kv',
+  'packages/miniflare/src/plugins/queues',
+  'packages/miniflare/src/plugins/r2',
+  'packages/miniflare/src/plugins/ratelimit',
+  'packages/miniflare/src/plugins/vectorize',
+  'packages/miniflare/src/plugins/workflows',
   'packages/vite-plugin-cloudflare',
   'packages/vite-plugin-cloudflare/src',
-  'packages/wrangler/src/auth',
-  'packages/wrangler/src/deploy',
-  'packages/wrangler/src/dev',
-  'packages/wrangler/src/pages',
-  'packages/wrangler/src/d1',
-  'packages/wrangler/src/kv',
-  'packages/wrangler/src/r2',
-  'packages/wrangler/src/queues',
-  'packages/wrangler/src/vectorize',
-  'packages/wrangler/src/hyperdrive',
-  'packages/wrangler/src/worker',
+  'packages/workers-utils',
+  'packages/wrangler/src/ai',
   'packages/wrangler/src/api',
+  'packages/wrangler/src/cloudchamber',
   'packages/wrangler/src/config',
-  'packages/wrangler/src/init',
-  'packages/wrangler/src/publish',
+  'packages/wrangler/src/d1',
+  'packages/wrangler/src/deploy',
+  'packages/wrangler/src/deployment-bundle',
+  'packages/wrangler/src/dev',
+  'packages/wrangler/src/hyperdrive',
+  'packages/wrangler/src/kv',
+  'packages/wrangler/src/metrics',
+  'packages/wrangler/src/pages',
+  'packages/wrangler/src/queues',
+  'packages/wrangler/src/r2',
   'packages/wrangler/src/secret',
   'packages/wrangler/src/tail',
-  'packages/wrangler/src/metrics',
+  'packages/wrangler/src/user',
+  'packages/wrangler/src/vectorize',
 ] as const;
 
-// Team members for bus factor analysis
-const WRANGLER_TEAM_MEMBERS = [
+// Fallback team members (used if GitHub API fails)
+const FALLBACK_TEAM_MEMBERS = [
   'penalosa',
   'jamesopstad',
   'dario-piotrowicz',
@@ -1051,7 +1066,61 @@ const WRANGLER_TEAM_MEMBERS = [
   'petebacondarwin',
   'ascorbic',
   'vicb',
-] as const;
+  'threepointone',
+  'mrbbot',
+  'mrosen',
+  'JacobMGEvans',
+  'CarmenPopoviciu',
+  'MattieTK',
+  'jspspike',
+  'geelen',
+  'GregBrimble',
+  'alankemp'
+];
+
+// Members to exclude from the team list (e.g., bot accounts)
+const EXCLUDED_MEMBERS = ['workers-devprod'];
+
+// Fetch team members from GitHub organization teams
+async function fetchTeamMembers(env: Env): Promise<string[]> {
+  const teams = ['wrangler', 'wrangler-friends'];
+  const allMembers = new Set<string>();
+
+  for (const team of teams) {
+    try {
+      const url = `https://api.github.com/orgs/cloudflare/teams/${team}/members`;
+      const response = await fetch(url, {
+        headers: {
+          'Accept': 'application/vnd.github+json',
+          'User-Agent': 'Workers-SDK-CI-Analyzer',
+          ...(env.GITHUB_TOKEN ? { 'Authorization': `Bearer ${env.GITHUB_TOKEN}` } : {})
+        }
+      });
+
+      if (response.ok) {
+        const members = await response.json() as Array<{ login: string }>;
+        members.forEach(member => {
+          if (!EXCLUDED_MEMBERS.includes(member.login)) {
+            allMembers.add(member.login);
+          }
+        });
+        console.log(`Fetched ${members.length} members from team: ${team}`);
+      } else {
+        console.warn(`Failed to fetch team ${team}: ${response.status} ${response.statusText}`);
+      }
+    } catch (error) {
+      console.error(`Error fetching team ${team}:`, error);
+    }
+  }
+
+  // If we got members from GitHub, return them; otherwise use fallback
+  if (allMembers.size > 0) {
+    return Array.from(allMembers).sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
+  }
+
+  console.warn('Using fallback team members list');
+  return FALLBACK_TEAM_MEMBERS;
+}
 
 // Enhanced GitHub item stored in KV
 interface GitHubItem {
@@ -2097,13 +2166,8 @@ async function fetchDirectoryCommits(
   let page = 1;
   const perPage = 100;
 
-  // Fetch last 6 months of commits
-  const sixMonthsAgo = new Date();
-  sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
-  const sinceDate = sixMonthsAgo.toISOString();
-
   while (true) {
-    const url = `https://api.github.com/repos/cloudflare/workers-sdk/commits?path=${encodeURIComponent(directory)}&per_page=${perPage}&page=${page}&since=${sinceDate}`;
+    const url = `https://api.github.com/repos/cloudflare/workers-sdk/commits?path=${encodeURIComponent(directory)}&per_page=${perPage}&page=${page}`;
     
     const response = await fetch(url, {
       headers: {
@@ -2122,6 +2186,7 @@ async function fetchDirectoryCommits(
     if (data.length === 0) break;
 
     for (const commit of data) {
+      console.log("Found commit for", directory, "by", commit.author?.login || 'unknown', "at", commit.commit.author.date);
       commits.push({
         author: commit.author?.login || null
       });
@@ -2129,9 +2194,6 @@ async function fetchDirectoryCommits(
 
     if (data.length < perPage) break;
     page++;
-
-    // Limit to prevent excessive API calls
-    if (page > 10) break;
   }
 
   return commits;
@@ -2140,11 +2202,12 @@ async function fetchDirectoryCommits(
 // Analyze bus factor for a single directory
 async function analyzeDirectoryBusFactor(
   env: Env,
-  directory: string
+  directory: string,
+  teamMembers: string[]
 ): Promise<BusFactorResult> {
   try {
     const commits = await fetchDirectoryCommits(env, directory);
-    const analysis = calculateBusFactor(commits, WRANGLER_TEAM_MEMBERS);
+    const analysis = calculateBusFactor(commits, teamMembers);
 
     return {
       directory,
@@ -2155,7 +2218,7 @@ async function analyzeDirectoryBusFactor(
   } catch (error) {
     console.error(`Error analyzing directory ${directory}:`, error);
     const emptyContributions: Record<string, number> = {};
-    WRANGLER_TEAM_MEMBERS.forEach(member => emptyContributions[member] = 0);
+    teamMembers.forEach(member => emptyContributions[member] = 0);
     return {
       directory,
       busFactor: 0,
@@ -2166,7 +2229,7 @@ async function analyzeDirectoryBusFactor(
 }
 
 // Analyze all monitored directories
-async function analyzeAllDirectories(env: Env): Promise<BusFactorResult[]> {
+async function analyzeAllDirectories(env: Env, teamMembers: string[]): Promise<BusFactorResult[]> {
   const results: BusFactorResult[] = [];
 
   // Process directories in parallel batches of 5 to avoid rate limiting
@@ -2174,7 +2237,7 @@ async function analyzeAllDirectories(env: Env): Promise<BusFactorResult[]> {
   for (let i = 0; i < MONITORED_DIRECTORIES.length; i += batchSize) {
     const batch = MONITORED_DIRECTORIES.slice(i, i + batchSize);
     const batchResults = await Promise.all(
-      batch.map(dir => analyzeDirectoryBusFactor(env, dir))
+      batch.map(dir => analyzeDirectoryBusFactor(env, dir, teamMembers))
     );
     results.push(...batchResults);
     
@@ -2197,6 +2260,7 @@ async function handleBusFactor(request: Request, env: Env): Promise<Response> {
     if (!forceRefresh) {
       const cached = await env.CI_DATA_KV.get(BUS_FACTOR_CACHE_KV_KEY, 'json') as {
         data: BusFactorResult[];
+        teamMembers: string[];
         timestamp: string;
       } | null;
 
@@ -2207,7 +2271,7 @@ async function handleBusFactor(request: Request, env: Env): Promise<Response> {
         if (cacheAge < oneHour) {
           return new Response(JSON.stringify({
             data: cached.data,
-            teamMembers: WRANGLER_TEAM_MEMBERS,
+            teamMembers: cached.teamMembers,
             cached: true,
             cachedAt: cached.timestamp
           }), {
@@ -2221,13 +2285,19 @@ async function handleBusFactor(request: Request, env: Env): Promise<Response> {
       }
     }
 
+    // Fetch team members from GitHub
+    console.log('Fetching team members from GitHub...');
+    const teamMembers = await fetchTeamMembers(env);
+    console.log(`Found ${teamMembers.length} team members`);
+
     // Analyze all directories
     console.log('Analyzing bus factor for all monitored directories...');
-    const results = await analyzeAllDirectories(env);
+    const results = await analyzeAllDirectories(env, teamMembers);
 
-    // Cache the results
+    // Cache the results (including team members)
     const cacheData = {
       data: results,
+      teamMembers: teamMembers,
       timestamp: new Date().toISOString()
     };
     await env.CI_DATA_KV.put(BUS_FACTOR_CACHE_KV_KEY, JSON.stringify(cacheData), {
@@ -2236,7 +2306,7 @@ async function handleBusFactor(request: Request, env: Env): Promise<Response> {
 
     return new Response(JSON.stringify({
       data: results,
-      teamMembers: WRANGLER_TEAM_MEMBERS,
+      teamMembers: teamMembers,
       cached: false,
       analyzedAt: cacheData.timestamp
     }), {

@@ -25,6 +25,40 @@ export default function BusFactorTable({
   const [sortOrder, setSortOrder] = useState<SortOrder>('asc');
   const [showTooltip, setShowTooltip] = useState(false);
 
+  // Sort team members by their "criticality" - number of critical directories they own
+  const sortedTeamMembers = useMemo(() => {
+    // Calculate criticality score for each team member
+    const memberScores = teamMembers.map((member) => {
+      let criticalCount = 0;
+      let totalContribution = 0;
+
+      data.forEach((item) => {
+        const contribution = item.teamMemberContributions?.[member] || 0;
+        // Count directories where: bus factor <= 2 AND contribution >= 10%
+        if (item.busFactor <= 2 && contribution >= 10) {
+          criticalCount++;
+          totalContribution += contribution;
+        }
+      });
+
+      return {
+        member,
+        criticalCount,
+        totalContribution,
+      };
+    });
+
+    // Sort by critical count (desc), then by total contribution (desc)
+    return memberScores
+      .sort((a, b) => {
+        if (b.criticalCount !== a.criticalCount) {
+          return b.criticalCount - a.criticalCount;
+        }
+        return b.totalContribution - a.totalContribution;
+      })
+      .map((s) => s.member);
+  }, [data, teamMembers]);
+
   const sortedData = useMemo(() => {
     return [...data].sort((a, b) => {
       let comparison = 0;
@@ -64,7 +98,7 @@ export default function BusFactorTable({
     let maxPercentage = 0;
     let maxContributor: string | null = null;
 
-    teamMembers.forEach((member) => {
+    sortedTeamMembers.forEach((member) => {
       const percentage = item.teamMemberContributions?.[member] || 0;
       if (percentage > maxPercentage) {
         maxPercentage = percentage;
@@ -177,7 +211,7 @@ export default function BusFactorTable({
                   )}
                 </div>
               </th>
-              {teamMembers.map((member, index) => (
+              {sortedTeamMembers.map((member, index) => (
                 <th
                   key={member}
                   className={`sortable center team-member-col ${index === 0 ? 'first-team-col' : ''}`}
@@ -203,14 +237,21 @@ export default function BusFactorTable({
               return (
                 <tr key={item.directory}>
                   <td className="directory-cell">
-                    <code>{item.directory}</code>
+                    <a
+                      href={`https://github.com/cloudflare/workers-sdk/tree/main/${item.directory}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="directory-link"
+                    >
+                      <code>{item.directory}</code>
+                    </a>
                   </td>
                   <td className="center">
                     <span className={`bus-factor-badge ${getBusFactorClass(item.busFactor)}`}>
                       {item.busFactor}
                     </span>
                   </td>
-                  {teamMembers.map((member, index) => (
+                  {sortedTeamMembers.map((member, index) => (
                     <td
                       key={member}
                       className={`center team-member-cell ${index === 0 ? 'first-team-col' : ''} ${highestContributor === member ? 'highest-contributor' : ''}`}

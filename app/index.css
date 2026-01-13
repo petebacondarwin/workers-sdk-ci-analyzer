@@ -1644,12 +1644,25 @@ footer p {
 .directory-cell {
   font-family: 'Courier New', monospace;
   font-size: 0.8rem;
-  color: var(--text-muted);
 }
 
 .directory-cell code {
   background: none;
   padding: 0;
+}
+
+.directory-link {
+  color: var(--text-muted);
+  text-decoration: none;
+  transition: color 0.2s;
+}
+
+.directory-link:hover {
+  color: var(--primary-color);
+}
+
+.directory-link:hover code {
+  text-decoration: underline;
 }
 
 .bus-factor-table td.center {
@@ -2243,4 +2256,80 @@ footer p {
   .stat-card {
     min-width: 100%;
   }
+}
+
+/* ============================================================================
+   Bus Factor By User Table Styles
+   ============================================================================ */
+
+.bus-factor-by-user-table .user-cell {
+  font-family: 'Courier New', monospace;
+  font-size: 0.9rem;
+}
+
+.bus-factor-by-user-table .user-cell code {
+  background: none;
+  padding: 0;
+  color: var(--text-color);
+}
+
+.critical-dirs-cell {
+  max-width: 500px;
+}
+
+.critical-dirs-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.critical-dir-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  font-family: 'Courier New', monospace;
+  white-space: nowrap;
+  text-decoration: none;
+  transition: all 0.2s;
+}
+
+.critical-dir-tag:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.critical-dir-tag.critical {
+  background-color: rgba(239, 68, 68, 0.15);
+  color: var(--danger-color);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.critical-dir-tag.warning {
+  background-color: rgba(234, 179, 8, 0.15);
+  color: var(--warning-color);
+  border: 1px solid rgba(234, 179, 8, 0.3);
+}
+
+.contribution-badge {
+  background-color: rgba(0, 0, 0, 0.2);
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+
+.more-dirs {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  font-style: italic;
+}
+
+.no-critical {
+  color: var(--text-muted);
+  font-style: italic;
+  font-size: 0.85rem;
 }
