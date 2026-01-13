@@ -26,12 +26,6 @@ export default function MainLayout() {
               Pull Requests
             </NavLink>
             <NavLink
-              to="/issue-chart"
-              className={({ isActive }) => `nav-tab ${isActive ? 'active' : ''}`}
-            >
-              Issue Chart
-            </NavLink>
-            <NavLink
               to="/bus-factor"
               className={({ isActive }) => `nav-tab ${isActive ? 'active' : ''}`}
             >

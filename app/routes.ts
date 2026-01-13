@@ -9,7 +9,6 @@ export default [
     route("ci-flakes", "routes/ci-flakes.tsx"),
     route("issues", "routes/issues.tsx"),
     route("prs", "routes/prs.tsx"),
-    route("issue-chart", "routes/issue-chart.tsx"),
     route("bus-factor", "routes/bus-factor.tsx"),
     route("issue-triage", "routes/issue-triage.tsx"),
     route("pr-health", "routes/pr-health.tsx"),
