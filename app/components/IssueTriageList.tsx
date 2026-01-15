@@ -19,6 +19,13 @@ const getAgeClass = (days: number): string => {
   return 'age-new';
 };
 
+const getAwaitingClass = (days: number): string => {
+  if (days > 14) return 'awaiting-critical';
+  if (days > 7) return 'awaiting-warning';
+  if (days > 3) return 'awaiting-moderate';
+  return 'awaiting-fresh';
+};
+
 const formatDays = (days: number): string => {
   if (days === 0) return 'Today';
   if (days === 1) return '1 day';
@@ -54,6 +61,14 @@ export default function IssueTriageList({ issues, emptyMessage }: IssueTriageLis
               #{issue.number} {issue.title}
             </a>
             <div className="triage-item-badges">
+              {issue.daysSinceAwaitingLabel != null && (
+                <span 
+                  className={`awaiting-badge ${getAwaitingClass(issue.daysSinceAwaitingLabel)}`}
+                  title="Time since awaiting label was applied"
+                >
+                  {formatDays(issue.daysSinceAwaitingLabel)} awaiting
+                </span>
+              )}
               <span 
                 className={`staleness-badge ${getStalenessClass(issue.staleDays)}`}
                 title="Time since last update"

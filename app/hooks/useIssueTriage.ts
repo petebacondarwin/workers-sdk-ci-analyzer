@@ -18,6 +18,9 @@ export interface TriageIssue {
   }>;
   ageDays: number;
   staleDays: number;
+  // For awaiting issues: when the awaiting label was most recently applied
+  awaitingLabelDate?: string | null;
+  daysSinceAwaitingLabel?: number | null;
 }
 
 export interface TriageStats {

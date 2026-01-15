@@ -2231,7 +2231,7 @@ footer p {
 }
 
 /* Staleness Badge */
-.staleness-badge, .age-badge {
+.staleness-badge, .age-badge, .awaiting-badge {
   display: inline-block;
   padding: 4px 10px;
   border-radius: 12px;
@@ -2278,6 +2278,27 @@ footer p {
 .age-ancient {
   background-color: rgba(239, 68, 68, 0.2);
   color: var(--danger-color);
+}
+
+/* Awaiting Badge - purple/violet theme to distinguish from staleness */
+.awaiting-fresh {
+  background-color: rgba(139, 92, 246, 0.2);
+  color: #8b5cf6;
+}
+
+.awaiting-moderate {
+  background-color: rgba(168, 85, 247, 0.25);
+  color: #a855f7;
+}
+
+.awaiting-warning {
+  background-color: rgba(192, 38, 211, 0.25);
+  color: #c026d3;
+}
+
+.awaiting-critical {
+  background-color: rgba(219, 39, 119, 0.25);
+  color: #db2777;
 }
 
 /* Comment Count */

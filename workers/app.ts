@@ -2655,6 +2655,177 @@ const ACTIVE_PROJECT_STATUSES = [
   'Approved',
 ];
 
+// All labels we want to track timeline events for (awaiting dev + awaiting CF)
+const ALL_AWAITING_LABELS = [
+  ...AWAITING_DEV_LABELS,
+  ...AWAITING_CF_LABELS,
+].map(l => l.toLowerCase());
+
+// GraphQL response types for timeline events
+interface LabeledTimelineEvent {
+  __typename: 'LabeledEvent';
+  createdAt: string;
+  label: {
+    name: string;
+  };
+}
+
+interface UnlabeledTimelineEvent {
+  __typename: 'UnlabeledEvent';
+  createdAt: string;
+  label: {
+    name: string;
+  };
+}
+
+type TimelineEvent = LabeledTimelineEvent | UnlabeledTimelineEvent | { __typename: string };
+
+interface IssueTimelineGraphQLResponse {
+  data?: {
+    repository?: {
+      [key: string]: {
+        timelineItems: {
+          nodes: TimelineEvent[];
+        };
+      } | null;
+    };
+  };
+  errors?: Array<{ message: string }>;
+}
+
+// Build a batched GraphQL query to fetch timeline events for multiple issues
+function buildTimelineEventsQuery(issueNumbers: number[]): string {
+  const issueFragments = issueNumbers.map((num, idx) => `
+    issue_${idx}: issue(number: ${num}) {
+      timelineItems(first: 100, itemTypes: [LABELED_EVENT, UNLABELED_EVENT]) {
+        nodes {
+          __typename
+          ... on LabeledEvent {
+            createdAt
+            label { name }
+          }
+          ... on UnlabeledEvent {
+            createdAt
+            label { name }
+          }
+        }
+      }
+    }
+  `).join('\n');
+
+  return `
+    query($owner: String!, $repo: String!) {
+      repository(owner: $owner, name: $repo) {
+        ${issueFragments}
+      }
+    }
+  `;
+}
+
+// Fetch timeline events for a batch of issues
+async function fetchIssueTimelineEvents(
+  env: Env,
+  issueNumbers: number[]
+): Promise<Record<number, TimelineEvent[]>> {
+  if (issueNumbers.length === 0) {
+    return {};
+  }
+
+  // GitHub GraphQL has limits, so batch in groups of 50
+  const BATCH_SIZE = 50;
+  const results: Record<number, TimelineEvent[]> = {};
+
+  for (let i = 0; i < issueNumbers.length; i += BATCH_SIZE) {
+    const batch = issueNumbers.slice(i, i + BATCH_SIZE);
+    const query = buildTimelineEventsQuery(batch);
+
+    const response = await fetch('https://api.github.com/graphql', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${env.GITHUB_TOKEN}`,
+        'Content-Type': 'application/json',
+        'User-Agent': 'Workers-SDK-CI-Analyzer'
+      },
+      body: JSON.stringify({
+        query,
+        variables: {
+          owner: 'cloudflare',
+          repo: 'workers-sdk'
+        }
+      })
+    });
+
+    if (!response.ok) {
+      console.error(`GitHub GraphQL API error: ${response.status}`);
+      continue; // Don't fail completely, just skip this batch
+    }
+
+    const result = await response.json() as IssueTimelineGraphQLResponse;
+
+    if (result.errors && result.errors.length > 0) {
+      console.error(`GraphQL errors: ${result.errors.map(e => e.message).join(', ')}`);
+      continue;
+    }
+
+    if (result.data?.repository) {
+      batch.forEach((issueNum, idx) => {
+        const issueData = result.data?.repository?.[`issue_${idx}`];
+        if (issueData?.timelineItems?.nodes) {
+          results[issueNum] = issueData.timelineItems.nodes;
+        }
+      });
+    }
+  }
+
+  return results;
+}
+
+// Find the most recent time an "awaiting" label was applied and is still present
+function findMostRecentAwaitingLabelDate(
+  events: TimelineEvent[],
+  currentLabels: string[]
+): string | null {
+  // Get list of awaiting labels currently on the issue
+  const currentAwaitingLabels = currentLabels.filter(
+    label => ALL_AWAITING_LABELS.includes(label.toLowerCase())
+  );
+
+  if (currentAwaitingLabels.length === 0) {
+    return null;
+  }
+
+  // Process events in chronological order to track label state
+  // We need to find the most recent "labeled" event for each awaiting label
+  // that hasn't been followed by an "unlabeled" event for the same label
+  const labelAddedDates: Record<string, string> = {};
+
+  for (const event of events) {
+    if (event.__typename === 'LabeledEvent') {
+      const labeledEvent = event as LabeledTimelineEvent;
+      const labelName = labeledEvent.label.name.toLowerCase();
+      if (ALL_AWAITING_LABELS.includes(labelName)) {
+        labelAddedDates[labelName] = labeledEvent.createdAt;
+      }
+    } else if (event.__typename === 'UnlabeledEvent') {
+      const unlabeledEvent = event as UnlabeledTimelineEvent;
+      const labelName = unlabeledEvent.label.name.toLowerCase();
+      // Label was removed, clear its added date
+      delete labelAddedDates[labelName];
+    }
+  }
+
+  // Find the most recent date among labels still present
+  let mostRecentDate: string | null = null;
+  for (const label of currentAwaitingLabels) {
+    const addedDate = labelAddedDates[label.toLowerCase()];
+    if (addedDate && (!mostRecentDate || addedDate > mostRecentDate)) {
+      mostRecentDate = addedDate;
+    }
+  }
+
+  return mostRecentDate;
+}
+
 // Handle issue triage API: GET /api/issue-triage
 async function handleIssueTriage(request: Request, env: Env): Promise<Response> {
   try {
@@ -2774,26 +2945,86 @@ async function handleIssueTriage(request: Request, env: Env): Promise<Response> 
     const enrichedAwaitingDev = enrichWithStats(awaitingDev);
     const enrichedAwaitingCF = enrichWithStats(awaitingCF);
     
-    // Sort: untriaged by created date (newest first), others by updated date
+    // Fetch timeline events for awaiting issues to get label application dates
+    // Combine both awaiting lists to fetch all at once
+    const awaitingIssueNumbers = [
+      ...awaitingDev.map(i => i.number),
+      ...awaitingCF.map(i => i.number)
+    ];
+    
+    let timelineEvents: Record<number, TimelineEvent[]> = {};
+    if (awaitingIssueNumbers.length > 0 && env.GITHUB_TOKEN) {
+      try {
+        timelineEvents = await fetchIssueTimelineEvents(env, awaitingIssueNumbers);
+      } catch (err) {
+        console.error('Failed to fetch timeline events:', err);
+        // Continue without timeline data
+      }
+    }
+    
+    // Helper to enrich awaiting issues with label date info
+    type EnrichedAwaitingIssue = ReturnType<typeof enrichWithStats>[0] & {
+      awaitingLabelDate: string | null;
+      daysSinceAwaitingLabel: number | null;
+    };
+    
+    const enrichWithAwaitingLabelDate = (
+      issues: ReturnType<typeof enrichWithStats>
+    ): EnrichedAwaitingIssue[] => {
+      return issues.map(issue => {
+        const events = timelineEvents[issue.number] || [];
+        const labelNames = issue.labels.map(l => l.name);
+        const awaitingLabelDate = findMostRecentAwaitingLabelDate(events, labelNames);
+        
+        return {
+          ...issue,
+          awaitingLabelDate,
+          daysSinceAwaitingLabel: awaitingLabelDate 
+            ? daysBetween(new Date(awaitingLabelDate), now)
+            : null,
+        };
+      });
+    };
+    
+    // Enrich awaiting issues with label timeline data
+    const enrichedAwaitingDevWithLabelDate = enrichWithAwaitingLabelDate(enrichedAwaitingDev);
+    const enrichedAwaitingCFWithLabelDate = enrichWithAwaitingLabelDate(enrichedAwaitingCF);
+    
+    // Sort: untriaged by created date (newest first), awaiting issues by days since label (longest first)
     enrichedUntriaged.sort((a, b) => 
       new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
     );
-    enrichedAwaitingDev.sort((a, b) => 
-      new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
-    );
-    enrichedAwaitingCF.sort((a, b) => 
-      new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
-    );
+    // Sort awaiting issues by days since label was applied (longest waiting first)
+    // Fall back to updatedAt for issues where we couldn't get timeline data
+    enrichedAwaitingDevWithLabelDate.sort((a, b) => {
+      // Issues with label date info sort by days waiting (most first)
+      if (a.daysSinceAwaitingLabel !== null && b.daysSinceAwaitingLabel !== null) {
+        return b.daysSinceAwaitingLabel - a.daysSinceAwaitingLabel;
+      }
+      // Issues with label date come before those without
+      if (a.daysSinceAwaitingLabel !== null) return -1;
+      if (b.daysSinceAwaitingLabel !== null) return 1;
+      // Fall back to staleness
+      return b.staleDays - a.staleDays;
+    });
+    enrichedAwaitingCFWithLabelDate.sort((a, b) => {
+      if (a.daysSinceAwaitingLabel !== null && b.daysSinceAwaitingLabel !== null) {
+        return b.daysSinceAwaitingLabel - a.daysSinceAwaitingLabel;
+      }
+      if (a.daysSinceAwaitingLabel !== null) return -1;
+      if (b.daysSinceAwaitingLabel !== null) return 1;
+      return b.staleDays - a.staleDays;
+    });
     
     // Calculate stats for each category
     const untriagedStats = calculateStats(enrichedUntriaged);
-    const awaitingDevStats = calculateStats(enrichedAwaitingDev);
-    const awaitingCFStats = calculateStats(enrichedAwaitingCF);
+    const awaitingDevStats = calculateStats(enrichedAwaitingDevWithLabelDate);
+    const awaitingCFStats = calculateStats(enrichedAwaitingCFWithLabelDate);
     
     // Limit to top 100 each
     const limitedUntriaged = enrichedUntriaged.slice(0, 100);
-    const limitedAwaitingDev = enrichedAwaitingDev.slice(0, 100);
-    const limitedAwaitingCF = enrichedAwaitingCF.slice(0, 100);
+    const limitedAwaitingDev = enrichedAwaitingDevWithLabelDate.slice(0, 100);
+    const limitedAwaitingCF = enrichedAwaitingCFWithLabelDate.slice(0, 100);
     
     return new Response(JSON.stringify({
       untriaged: limitedUntriaged,
