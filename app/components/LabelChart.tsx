@@ -65,12 +65,15 @@ export default function LabelChart({ data, loading, error, itemType = 'issue' }:
   // Calculate stats for the total
   const stats = useMemo(() => {
     if (data.total.length === 0) {
-      return { min: 0, max: 0, avg: 0 };
+      return { min: 0, max: 0, avg: 0, current: 0, change: 0 };
     }
     const min = Math.min(...data.total);
     const max = Math.max(...data.total);
     const avg = data.total.reduce((sum, val) => sum + val, 0) / data.total.length;
-    return { min, max, avg: Math.round(avg * 10) / 10 };
+    const current = data.total[data.total.length - 1];
+    const first = data.total[0];
+    const change = current - first;
+    return { min, max, avg: Math.round(avg * 10) / 10, current, change };
   }, [data.total]);
 
   // Filter labels based on search query
@@ -304,6 +307,33 @@ export default function LabelChart({ data, loading, error, itemType = 'issue' }:
 
   return (
     <div className="issue-label-chart">
+      {/* Stats summary bar - only show when total is selected */}
+      {selectedLabels.has('total') && (
+        <div className="label-chart-stats">
+          <div className="stat-card">
+            <div className="stat-value">{stats.current}</div>
+            <div className="stat-label">Current</div>
+          </div>
+          <div className="stat-card">
+            <div className={`stat-value ${stats.change >= 0 ? 'positive' : 'negative'}`}>
+              {stats.change >= 0 ? '+' : ''}{stats.change} {stats.change >= 0 ? '\u2191' : '\u2193'}
+            </div>
+            <div className="stat-label">Change</div>
+          </div>
+          <div className="stat-card">
+            <div className="stat-value">{stats.min}</div>
+            <div className="stat-label">Min</div>
+          </div>
+          <div className="stat-card">
+            <div className="stat-value">{stats.max}</div>
+            <div className="stat-label">Max</div>
+          </div>
+          <div className="stat-card">
+            <div className="stat-value">{stats.avg}</div>
+            <div className="stat-label">Avg</div>
+          </div>
+        </div>
+      )}
       <div className="chart-layout">
         {/* Left sidebar - Label filters */}
         <div className="label-filter-sidebar">

@@ -1329,6 +1329,46 @@ footer p {
   margin-bottom: 40px;
 }
 
+/* Label Chart Stats Summary */
+.label-chart-stats {
+  display: flex;
+  gap: 15px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+
+.label-chart-stats .stat-card {
+  flex: 1;
+  min-width: 100px;
+  background-color: var(--surface-color);
+  border-radius: 8px;
+  padding: 12px 16px;
+  text-align: center;
+  border: 1px solid var(--border-color);
+}
+
+.label-chart-stats .stat-value {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--primary-color);
+  margin-bottom: 4px;
+}
+
+.label-chart-stats .stat-value.positive {
+  color: var(--success-color);
+}
+
+.label-chart-stats .stat-value.negative {
+  color: var(--danger-color);
+}
+
+.label-chart-stats .stat-label {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
 .chart-layout {
   display: flex;
   gap: 20px;
