@@ -4,6 +4,10 @@ A comprehensive dashboard for analyzing CI health, test flakiness, and performan
 
 Built with React, React Router, and Vite, deployed to Cloudflare Workers using the `@cloudflare/vite-plugin`.
 
+**Repository**: [gitlab.cfdata.org/cloudflare/ew/workers-authoring-and-testing/workers-sdk-ci-analyzer](https://gitlab.cfdata.org/cloudflare/ew/workers-authoring-and-testing/workers-sdk-ci-analyzer)
+
+**Deployed to**: Workers Authoring & Testing "experiments" account
+
 ## Features
 
 - **Advanced Flaky Tests Detection**: 
@@ -78,11 +82,12 @@ npm install
      - `public_repo` - Read access to public repositories
      - `read:org` - Read organization membership (for Bus Factor team members)
      - `read:project` - Read organization projects (for Issue Triage status filtering)
-   - For local development, create a `.dev.vars` file:
+   - For local development, copy `.dev.vars.example` to `.dev.vars` and add your token:
+   ```bash
+   cp .dev.vars.example .dev.vars
+   # Edit .dev.vars and add your GitHub token
    ```
-   GITHUB_TOKEN=your_token_here
-   ```
-   - For production, set it as a secret (recommended):
+   - For production, set it as a Worker secret after deployment:
    ```bash
    wrangler secret put GITHUB_TOKEN
    ```
@@ -112,16 +117,14 @@ This creates an optimized build in the `dist/` directory.
 
 ### Deployment
 
-Deploy to Cloudflare Workers:
+**Production deployments are handled automatically via GitLab CI** when changes are merged to `main`.
+
+For manual deployment (not recommended for production):
 ```bash
 npm run deploy
 ```
 
-Or manually:
-```bash
-npm run build
-wrangler deploy
-```
+See [DEPLOYMENT.md](./DEPLOYMENT.md) for full deployment documentation including GitLab CI setup.
 
 ## Usage
 

@@ -1,5 +1,6 @@
 {
   // Configuration for Workers SDK CI Analyzer
+  // Deployed via GitLab CI to the Workers Authoring & Testing "experiments" account
   "name": "workers-sdk-ci-analyzer",
   "main": "./workers/app.ts",
   "compatibility_date": "2024-09-23",
@@ -7,12 +8,14 @@
   
   // KV namespace for storing CI data
   // Note: Wrangler automatically provisions the KV namespace on first deployment
-  // After first deployment, you can optionally add the ID for local development
+  // After first deployment, you can optionally add the ID for local development with remote KV:
+  //   1. Run: wrangler kv:namespace list
+  //   2. Find the CI_DATA_KV namespace ID
+  //   3. Uncomment and set the "id" field below
   "kv_namespaces": [
     {
-      "binding": "CI_DATA_KV",
-      "remote": true,
-      "id": "f6a1d96bfec24ae281469d913f21d947"
+      "binding": "CI_DATA_KV"
+      // "id": "<KV_NAMESPACE_ID>"  // Add after first deploy for `wrangler kv:*` commands
     }
   ],
   
@@ -21,11 +24,8 @@
   // - GitHub items (issues/PRs): hourly
   "triggers": {
     "crons": ["0 6 * * *", "0 * * * *"]
-  },
+  }
   
-  // Optional: Add a GitHub token for higher API rate limits
-  // Uncomment and configure, or use `wrangler secret put GITHUB_TOKEN`
-  // "vars": {
-  //   "GITHUB_TOKEN": "your_token_here"
-  // }
+  // Note: GITHUB_TOKEN must be set as a Worker secret after deployment:
+  //   wrangler secret put GITHUB_TOKEN
 }

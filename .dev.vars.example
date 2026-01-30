@@ -1,0 +1,16 @@
+# Local Development Environment Variables
+# Copy this file to .dev.vars and fill in your values
+# 
+# IMPORTANT: Never commit .dev.vars to version control!
+
+# GitHub Personal Access Token (required for full functionality)
+# Create a token at: https://github.com/settings/tokens
+#
+# Required scopes:
+#   - public_repo     : Read access to public repositories (issues, PRs, commits)
+#   - read:org        : Read organization membership (for Bus Factor team members)
+#   - read:project    : Read organization projects (for Issue Triage status filtering)
+#
+# Without a token: 60 requests/hour (GitHub API limit)
+# With a token: 5,000 requests/hour
+GITHUB_TOKEN=ghp_your_github_token_here
