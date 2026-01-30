@@ -53,6 +53,34 @@ export default function PRHealth() {
     }
   };
 
+  const handleForceSync = async () => {
+    if (!confirm('This will re-fetch all data from GitHub and remove any stale items. This may take a few minutes. Continue?')) {
+      return;
+    }
+    
+    setSyncing(true);
+    setSyncMessage('Force re-sync in progress... This may take a few minutes.');
+    
+    try {
+      const response = await fetch('/api/sync-github-items?reconcile', { method: 'POST' });
+      const result = await response.json() as { success?: boolean; error?: string; totalItems?: number; removedItems?: number };
+      
+      if (result.success) {
+        setSyncMessage(`Force re-sync complete! ${result.totalItems} total items${result.removedItems ? `, ${result.removedItems} stale items removed` : ''}.`);
+        setTimeout(() => {
+          refetch();
+          setSyncMessage(null);
+        }, 1500);
+      } else {
+        setSyncMessage(`Force re-sync failed: ${result.error}`);
+      }
+    } catch (err) {
+      setSyncMessage(`Force re-sync failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    } finally {
+      setSyncing(false);
+    }
+  };
+
   const handleSortChange = (key: SortKey) => {
     if (sortBy === key) {
       setSortOrder(sortOrder === 'desc' ? 'asc' : 'desc');
@@ -134,7 +162,14 @@ export default function PRHealth() {
             className="sync-button" 
             disabled={loading || syncing}
           >
-            {syncing ? 'Syncing GitHub Data...' : 'Sync GitHub Data'}
+            {syncing ? 'Syncing...' : 'Sync GitHub Data'}
+          </button>
+          <button 
+            onClick={handleForceSync} 
+            className="sync-button danger" 
+            disabled={loading || syncing}
+          >
+            {syncing ? 'Syncing...' : 'Force Re-sync'}
           </button>
         </div>
         

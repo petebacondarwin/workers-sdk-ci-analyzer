@@ -92,7 +92,8 @@ export default {
   async scheduled(event, env, ctx) {
     const scheduledTime = new Date(event.scheduledTime);
     const hour = scheduledTime.getUTCHours();
-    console.log(`Scheduled job triggered at ${scheduledTime.toISOString()} (hour: ${hour} UTC)`);
+    const dayOfWeek = scheduledTime.getUTCDay(); // 0 = Sunday
+    console.log(`Scheduled job triggered at ${scheduledTime.toISOString()} (hour: ${hour} UTC, day: ${dayOfWeek})`);
     
     // CI data sync only at 6 AM UTC (once daily)
     if (hour === 6) {
@@ -104,10 +105,20 @@ export default {
       }
     }
     
-    // GitHub items sync every hour
+    // GitHub items sync
+    // Weekly reconciliation: Sunday at midnight UTC (removes stale items)
+    // All other hours: incremental sync
+    const isWeeklyReconciliation = hour === 0 && dayOfWeek === 0;
+    
     try {
-      const result = await syncGitHubItems(env, false);
-      console.log(`Successfully synced GitHub items: ${result.newItems} new, ${result.updatedItems} updated, ${result.totalItems} total`);
+      if (isWeeklyReconciliation) {
+        console.log('Running weekly reconciliation sync...');
+        const result = await syncGitHubItems(env, false, true); // reconcile=true
+        console.log(`Weekly reconciliation complete: ${result.removedItems} removed, ${result.newItems} new, ${result.updatedItems} updated, ${result.totalItems} total`);
+      } else {
+        const result = await syncGitHubItems(env, false, false);
+        console.log(`Successfully synced GitHub items: ${result.newItems} new, ${result.updatedItems} updated, ${result.totalItems} total`);
+      }
     } catch (error: any) {
       console.error('Failed to sync GitHub items:', error.message);
     }
@@ -1566,6 +1577,7 @@ async function fetchPRsGraphQL(
 interface SyncResult {
   newItems: number;
   updatedItems: number;
+  removedItems: number;
   totalItems: number;
   issueCount: number;
   prCount: number;
@@ -1573,7 +1585,7 @@ interface SyncResult {
   syncDuration: number;
 }
 
-async function syncGitHubItems(env: Env, force: boolean): Promise<SyncResult> {
+async function syncGitHubItems(env: Env, force: boolean, reconcile: boolean = false): Promise<SyncResult> {
   const startTime = Date.now();
   
   if (!env.GITHUB_TOKEN) {
@@ -1584,6 +1596,7 @@ async function syncGitHubItems(env: Env, force: boolean): Promise<SyncResult> {
   let meta: GitHubItemsMeta | null;
   let newItemCount = 0;
   let updatedItemCount = 0;
+  let removedItemCount = 0;
 
   if (force) {
     // Force sync: delete everything and start fresh
@@ -1605,6 +1618,13 @@ async function syncGitHubItems(env: Env, force: boolean): Promise<SyncResult> {
     console.log('Performing full sync...');
     const result = await performFullSync(env, items);
     newItemCount = result.newItems;
+  } else if (reconcile) {
+    // Reconciliation sync: fetch all from GitHub, remove stale items
+    console.log('Performing reconciliation sync...');
+    const result = await performReconciliationSync(env, items);
+    newItemCount = result.newItems;
+    updatedItemCount = result.updatedItems;
+    removedItemCount = result.removedItems;
   } else {
     // Incremental sync
     console.log(`Performing incremental sync. Last sync: ${meta.lastSync}, Highest number: ${meta.highestNumber}`);
@@ -1640,11 +1660,12 @@ async function syncGitHubItems(env: Env, force: boolean): Promise<SyncResult> {
   await saveGitHubItemsToKV(env, items, newMeta);
 
   const syncDuration = Date.now() - startTime;
-  console.log(`Sync complete. New: ${newItemCount}, Updated: ${updatedItemCount}, Total: ${itemValues.length}, Duration: ${syncDuration}ms`);
+  console.log(`Sync complete. New: ${newItemCount}, Updated: ${updatedItemCount}, Removed: ${removedItemCount}, Total: ${itemValues.length}, Duration: ${syncDuration}ms`);
 
   return {
     newItems: newItemCount,
     updatedItems: updatedItemCount,
+    removedItems: removedItemCount,
     totalItems: itemValues.length,
     issueCount,
     prCount,
@@ -1862,11 +1883,105 @@ async function fetchUpdatedItems(
   return { updatedItems };
 }
 
+// Reconciliation sync: fetches all items from GitHub and removes stale items from KV
+async function performReconciliationSync(
+  env: Env,
+  existingItems: Record<number, GitHubItem>
+): Promise<{ removedItems: number; updatedItems: number; newItems: number }> {
+  console.log('Performing reconciliation sync...');
+  
+  // Fetch ALL current items from GitHub into a fresh record
+  const githubItems: Record<number, GitHubItem> = {};
+  
+  // Fetch all issues
+  console.log('Fetching all issues for reconciliation...');
+  let cursor: string | null = null;
+  let hasNextPage = true;
+  let pageCount = 0;
+  
+  while (hasNextPage) {
+    const result = await fetchIssuesGraphQL(env, getIssuesQuery(), cursor);
+    const issuesData = result.data?.repository?.issues;
+    if (!issuesData) break;
+    
+    for (const node of issuesData.nodes) {
+      githubItems[node.number] = transformIssueNode(node);
+    }
+    
+    hasNextPage = issuesData.pageInfo.hasNextPage;
+    cursor = issuesData.pageInfo.endCursor;
+    pageCount++;
+    
+    if (pageCount % 10 === 0) {
+      console.log(`Issues reconciliation: ${pageCount} pages, ${Object.keys(githubItems).length} items`);
+    }
+    
+    await new Promise(resolve => setTimeout(resolve, 50));
+  }
+  console.log(`Fetched ${pageCount} pages of issues for reconciliation`);
+  
+  // Fetch all PRs
+  console.log('Fetching all PRs for reconciliation...');
+  cursor = null;
+  hasNextPage = true;
+  pageCount = 0;
+  
+  while (hasNextPage) {
+    const result = await fetchPRsGraphQL(env, getPRsQuery(), cursor);
+    const prsData = result.data?.repository?.pullRequests;
+    if (!prsData) break;
+    
+    for (const node of prsData.nodes) {
+      githubItems[node.number] = transformPRNode(node);
+    }
+    
+    hasNextPage = prsData.pageInfo.hasNextPage;
+    cursor = prsData.pageInfo.endCursor;
+    pageCount++;
+    
+    if (pageCount % 10 === 0) {
+      console.log(`PRs reconciliation: ${pageCount} pages, ${Object.keys(githubItems).length} items`);
+    }
+    
+    await new Promise(resolve => setTimeout(resolve, 50));
+  }
+  console.log(`Fetched ${pageCount} pages of PRs for reconciliation`);
+  
+  // Find items in existing KV that no longer exist in GitHub
+  const existingNumbers = new Set(Object.keys(existingItems).map(Number));
+  const githubNumbers = new Set(Object.keys(githubItems).map(Number));
+  
+  let removedItems = 0;
+  for (const num of existingNumbers) {
+    if (!githubNumbers.has(num)) {
+      console.log(`Removing stale item #${num} (no longer exists in GitHub)`);
+      delete existingItems[num];
+      removedItems++;
+    }
+  }
+  
+  // Count new and updated items, then update all items with fresh data from GitHub
+  let newItems = 0;
+  let updatedItems = 0;
+  for (const [numStr, item] of Object.entries(githubItems)) {
+    const num = Number(numStr);
+    if (!existingItems[num]) {
+      newItems++;
+    } else if (JSON.stringify(existingItems[num]) !== JSON.stringify(item)) {
+      updatedItems++;
+    }
+    existingItems[num] = item;
+  }
+  
+  console.log(`Reconciliation complete: ${removedItems} removed, ${newItems} new, ${updatedItems} updated`);
+  return { removedItems, updatedItems, newItems };
+}
+
 // ============================================================================
 // API Handlers
 // ============================================================================
 
-// Handle sync endpoint: POST /api/sync-github-items?force
+// Handle sync endpoint: POST /api/sync-github-items?force&reconcile
 async function handleSyncGitHubItems(request: Request, env: Env): Promise<Response> {
   if (request.method !== 'POST') {
     return new Response(JSON.stringify({ error: 'Method not allowed' }), {
@@ -1878,8 +1993,9 @@ async function handleSyncGitHubItems(request: Request, env: Env): Promise<Respon
   try {
     const url = new URL(request.url);
     const force = url.searchParams.has('force');
+    const reconcile = url.searchParams.has('reconcile');
 
-    const result = await syncGitHubItems(env, force);
+    const result = await syncGitHubItems(env, force, reconcile);
 
     return new Response(JSON.stringify({
       success: true,
@@ -1982,13 +2098,16 @@ function calculateDailyOpenCounts(
   const currentDate = new Date(startDate);
   currentDate.setHours(23, 59, 59, 999); // End of day
   
+  // Get today's date for comparison (to use state field for current day)
+  const today = new Date();
+  today.setHours(23, 59, 59, 999);
+  
   while (currentDate <= endDate) {
     const dateStr = currentDate.toISOString().split('T')[0];
     const dayEnd = new Date(currentDate);
+    const isToday = dayEnd.toDateString() === today.toDateString();
     
     // Count items that were open on this day
-    // An item is open on day D if:
-    // - createdAt <= D AND (closedAt is null OR closedAt > D)
     let openCount = 0;
     
     for (const item of items) {
@@ -1997,8 +2116,16 @@ function calculateDailyOpenCounts(
       
       // Item must have been created by end of this day
       if (createdAt <= dayEnd) {
-        // Item is open if not closed, or closed after this day
-        if (!closedAt || closedAt > dayEnd) {
+        let isOpen: boolean;
+        if (isToday) {
+          // For today, use the actual state from GitHub (handles reopened items & is authoritative)
+          isOpen = item.state === 'open';
+        } else {
+          // For historical days, use createdAt/closedAt logic
+          isOpen = !closedAt || closedAt > dayEnd;
+        }
+        
+        if (isOpen) {
           openCount++;
         }
       }
@@ -2102,9 +2229,14 @@ function calculateDailyLabelCounts(
   const currentDate = new Date(startDate);
   currentDate.setHours(23, 59, 59, 999); // End of day
   
+  // Get today's date for comparison (to use state field for current day)
+  const today = new Date();
+  today.setHours(23, 59, 59, 999);
+  
   while (currentDate <= endDate) {
     const dayEnd = new Date(currentDate);
     const timestamp = Math.floor(dayEnd.getTime() / 1000);
+    const isToday = dayEnd.toDateString() === today.toDateString();
     
     timestamps.push(timestamp);
     
@@ -2121,14 +2253,25 @@ function calculateDailyLabelCounts(
       const createdAt = new Date(issue.createdAt);
       const closedAt = issue.closedAt ? new Date(issue.closedAt) : null;
       
-      // Issue is open on this day if created before/on this day AND (not closed OR closed after this day)
-      if (createdAt <= dayEnd && (!closedAt || closedAt > dayEnd)) {
-        openCount++;
+      // Issue must have been created by end of this day
+      if (createdAt <= dayEnd) {
+        let isOpen: boolean;
+        if (isToday) {
+          // For today, use the actual state from GitHub (handles reopened issues & is authoritative)
+          isOpen = issue.state === 'open';
+        } else {
+          // For historical days, use createdAt/closedAt logic
+          isOpen = !closedAt || closedAt > dayEnd;
+        }
         
-        // Count this issue for each of its labels
-        for (const label of issue.labels) {
-          if (labelCounts[label.name] !== undefined) {
-            labelCounts[label.name]++;
+        if (isOpen) {
+          openCount++;
+          
+          // Count this issue for each of its labels
+          for (const label of issue.labels) {
+            if (labelCounts[label.name] !== undefined) {
+              labelCounts[label.name]++;
+            }
           }
         }
       }
