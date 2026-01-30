@@ -7,31 +7,13 @@
 #
 # 2. After first deploy, set the GITHUB_TOKEN worker secret:
 #    wrangler secret put GITHUB_TOKEN
-#
-# Documentation: https://backstage.cfdata.org/docs/default/component/gitlab-ci-component-docs/migration/workers/
-
-stages: [test, publish]
 
 include:
-  # Test stage - runs npm test (if defined) and type checking
-  # Runs on all branches and merge requests
-  - component: $CI_SERVER_FQDN/cloudflare/ci/wrangler2/test@~latest
+  - component: $CI_SERVER_FQDN/cloudflare/ci/wrangler2/deploy@~latest
     inputs:
-      stage: test
-      NODE_VERSION: "20"
-
-  # Publish dry-run - validates that wrangler deploy will succeed
-  # Runs on all branches and merge requests
-  - component: $CI_SERVER_FQDN/cloudflare/ci/wrangler2/publish-dryrun@~latest
-    inputs:
-      stage: test
-      NODE_VERSION: "20"
-
-  # Publish to Cloudflare Workers
-  # Only runs on main branch after tests pass
-  - component: $CI_SERVER_FQDN/cloudflare/ci/wrangler2/publish@~latest
-    inputs:
-      stage: publish
+      stage: deploy
       NODE_VERSION: "20"
       runOnBranches: "^main$"
-      needs: ["wrangler2-test", "wrangler2-publish-dryrun"]
+      CLOUDFLARE_API_TOKEN: $CLOUDFLARE_API_TOKEN
+
+stages: [deploy]
