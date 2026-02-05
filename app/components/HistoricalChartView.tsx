@@ -43,6 +43,7 @@ export default function HistoricalChartView({ dateRange }: HistoricalChartViewPr
   const [selectedJobs, setSelectedJobs] = useState<Set<string>>(new Set());
   const [filterExpanded, setFilterExpanded] = useState(false);
   const [initialized, setInitialized] = useState(false);
+  const [viewMode, setViewMode] = useState<'individual' | 'total'>('individual');
 
   useEffect(() => {
     async function fetchHistory() {
@@ -136,6 +137,53 @@ export default function HistoricalChartView({ dateRange }: HistoricalChartViewPr
     snapshotsByDate.set(snapshot.date, snapshot);
   });
 
+  // Calculate total flakes dataset (aggregated across all jobs)
+  const calculateTotalFlakesDataset = (dateLabels: string[]) => {
+    const data = dateLabels.map(date => {
+      const snapshot = snapshotsByDate.get(date);
+      if (!snapshot) return null;
+      
+      let totalFailures = 0;
+      let totalSuccesses = 0;
+      
+      Object.values(snapshot.jobs).forEach(jobData => {
+        totalFailures += jobData.failures;
+        totalSuccesses += jobData.successes;
+      });
+      
+      const total = totalFailures + totalSuccesses;
+      if (total === 0) return null;
+      
+      return (totalFailures / total) * 100;
+    });
+
+    // Store raw data for tooltip breakdown
+    const totalData = dateLabels.map(date => {
+      const snapshot = snapshotsByDate.get(date);
+      if (!snapshot) return null;
+      let totalFailures = 0;
+      let totalSuccesses = 0;
+      Object.values(snapshot.jobs).forEach(jobData => {
+        totalFailures += jobData.failures;
+        totalSuccesses += jobData.successes;
+      });
+      return { failures: totalFailures, successes: totalSuccesses };
+    });
+
+    return {
+      label: 'Total (All Jobs)',
+      data,
+      borderColor: 'rgb(255, 255, 255)',
+      backgroundColor: 'rgba(255, 255, 255, 0.1)',
+      borderWidth: 3,
+      tension: 0.3,
+      spanGaps: true,
+      pointRadius: 4,
+      pointHoverRadius: 7,
+      totalData
+    };
+  };
+
   // Prepare chart data with all dates in range
   const labels = generateDateRange(dateRange.start, dateRange.end);
   
@@ -154,26 +202,28 @@ export default function HistoricalChartView({ dateRange }: HistoricalChartViewPr
     'rgb(6, 182, 212)',   // cyan
   ];
 
-  const datasets = filteredJobNames.map((jobName, index) => {
-    const data = labels.map(date => {
-      const snapshot = snapshotsByDate.get(date);
-      if (!snapshot) return null;
-      const jobData = snapshot.jobs[jobName];
-      return jobData ? jobData.failureRate : null;
-    });
+  const datasets = viewMode === 'total' 
+    ? [calculateTotalFlakesDataset(labels)]
+    : filteredJobNames.map((jobName, index) => {
+        const data = labels.map(date => {
+          const snapshot = snapshotsByDate.get(date);
+          if (!snapshot) return null;
+          const jobData = snapshot.jobs[jobName];
+          return jobData ? jobData.failureRate : null;
+        });
 
-    return {
-      label: jobName,
-      data: data,
-      borderColor: colors[index % colors.length],
-      backgroundColor: colors[index % colors.length].replace('rgb', 'rgba').replace(')', ', 0.1)'),
-      borderWidth: 2,
-      tension: 0.3,
-      spanGaps: true,
-      pointRadius: 3,
-      pointHoverRadius: 6
-    };
-  });
+        return {
+          label: jobName,
+          data: data,
+          borderColor: colors[index % colors.length],
+          backgroundColor: colors[index % colors.length].replace('rgb', 'rgba').replace(')', ', 0.1)'),
+          borderWidth: 2,
+          tension: 0.3,
+          spanGaps: true,
+          pointRadius: 3,
+          pointHoverRadius: 6
+        };
+      });
 
   const chartData = {
     labels,
@@ -212,6 +262,22 @@ export default function HistoricalChartView({ dateRange }: HistoricalChartViewPr
           label: function(context) {
             const jobName = context.dataset.label || '';
             const value = context.parsed.y !== null ? context.parsed.y.toFixed(1) + '%' : 'N/A';
+            
+            // Show breakdown for total flakes view
+            if (jobName === 'Total (All Jobs)') {
+              const dataset = context.dataset as typeof context.dataset & { totalData?: Array<{ failures: number; successes: number } | null> };
+              if (dataset.totalData) {
+                const dataIndex = context.dataIndex;
+                const rawData = dataset.totalData[dataIndex];
+                if (rawData) {
+                  const total = rawData.failures + rawData.successes;
+                  return [
+                    `${jobName}: ${value}`,
+                    `  Failures: ${rawData.failures}/${total} runs`
+                  ];
+                }
+              }
+            }
             return `${jobName}: ${value}`;
           }
         }
@@ -280,39 +346,65 @@ export default function HistoricalChartView({ dateRange }: HistoricalChartViewPr
 
   return (
     <div className="historical-chart-view">
-      <div className="job-filter-section">
-        <button 
-          className="filter-toggle"
-          onClick={() => setFilterExpanded(!filterExpanded)}
-        >
-          {filterExpanded ? '▼' : '▶'} Filter Jobs ({selectedJobs.size}/{sortedJobNames.length} selected)
-        </button>
-        
-        {filterExpanded && (
-          <div className="job-filter-panel">
-            <div className="filter-actions">
-              <button onClick={selectAll}>Select All</button>
-              <button onClick={selectNone}>Select None</button>
-            </div>
-            <div className="job-checkboxes">
-              {sortedJobNames.map((jobName, index) => (
-                <label key={jobName} className="job-checkbox">
-                  <input
-                    type="checkbox"
-                    checked={selectedJobs.has(jobName)}
-                    onChange={() => toggleJob(jobName)}
-                  />
-                  <span 
-                    className="job-color-indicator" 
-                    style={{ backgroundColor: colors[index % colors.length] }}
-                  />
-                  {jobName}
-                </label>
-              ))}
-            </div>
-          </div>
-        )}
+      <div className="view-mode-section">
+        <span className="view-mode-label">View:</span>
+        <label className="view-mode-option">
+          <input
+            type="radio"
+            name="viewMode"
+            value="individual"
+            checked={viewMode === 'individual'}
+            onChange={() => setViewMode('individual')}
+          />
+          Individual Jobs
+        </label>
+        <label className="view-mode-option">
+          <input
+            type="radio"
+            name="viewMode"
+            value="total"
+            checked={viewMode === 'total'}
+            onChange={() => setViewMode('total')}
+          />
+          Total (All Jobs)
+        </label>
       </div>
+
+      {viewMode === 'individual' && (
+        <div className="job-filter-section">
+          <button 
+            className="filter-toggle"
+            onClick={() => setFilterExpanded(!filterExpanded)}
+          >
+            {filterExpanded ? '▼' : '▶'} Filter Jobs ({selectedJobs.size}/{sortedJobNames.length} selected)
+          </button>
+          
+          {filterExpanded && (
+            <div className="job-filter-panel">
+              <div className="filter-actions">
+                <button onClick={selectAll}>Select All</button>
+                <button onClick={selectNone}>Select None</button>
+              </div>
+              <div className="job-checkboxes">
+                {sortedJobNames.map((jobName, index) => (
+                  <label key={jobName} className="job-checkbox">
+                    <input
+                      type="checkbox"
+                      checked={selectedJobs.has(jobName)}
+                      onChange={() => toggleJob(jobName)}
+                    />
+                    <span 
+                      className="job-color-indicator" 
+                      style={{ backgroundColor: colors[index % colors.length] }}
+                    />
+                    {jobName}
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="chart-container-wrapper">
         <div className="chart-container" style={{ height: '600px' }}>
@@ -325,7 +417,11 @@ export default function HistoricalChartView({ dateRange }: HistoricalChartViewPr
           Showing {labels.length} date{labels.length !== 1 ? 's' : ''} from{' '}
           {dateRange.start} to {dateRange.end} ({snapshots.length} with data)
         </p>
-        <p>Displaying {filteredJobNames.length} of {sortedJobNames.length} jobs</p>
+        {viewMode === 'total' ? (
+          <p>Displaying total flakes across all {sortedJobNames.length} jobs</p>
+        ) : (
+          <p>Displaying {filteredJobNames.length} of {sortedJobNames.length} jobs</p>
+        )}
       </div>
     </div>
   );
