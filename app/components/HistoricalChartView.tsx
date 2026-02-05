@@ -230,6 +230,19 @@ export default function HistoricalChartView({ dateRange }: HistoricalChartViewPr
     datasets
   };
 
+  // Calculate max value for y-axis in total view mode
+  let yAxisMax: number | undefined = 100;
+  if (viewMode === 'total' && datasets.length > 0) {
+    const totalDataset = datasets[0];
+    const validValues = totalDataset.data.filter((v): v is number => v !== null);
+    if (validValues.length > 0) {
+      const maxValue = Math.max(...validValues);
+      // Add 10% padding and round up to nearest 5
+      yAxisMax = Math.ceil(maxValue * 1.1 / 5) * 5;
+      if (yAxisMax < 5) yAxisMax = 5; // Minimum of 5% for readability
+    }
+  }
+
   const options: ChartOptions<'line'> = {
     responsive: true,
     maintainAspectRatio: false,
@@ -286,7 +299,7 @@ export default function HistoricalChartView({ dateRange }: HistoricalChartViewPr
     scales: {
       y: {
         beginAtZero: true,
-        max: 100,
+        max: yAxisMax,
         title: {
           display: true,
           text: 'Failure Rate (%)',
