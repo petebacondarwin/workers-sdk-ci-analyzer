@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { Line } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
@@ -56,6 +56,15 @@ const COLORS = [
 export default function LabelChart({ data, loading, error, itemType = 'issue' }: LabelChartProps) {
   const [selectedLabels, setSelectedLabels] = useState<Set<string>>(new Set(['total']));
   const [searchQuery, setSearchQuery] = useState('');
+  const initializedRef = useRef(false);
+
+  // Update default selection to include opened/closed when data becomes available
+  useEffect(() => {
+    if (!initializedRef.current && data.opened && data.closed) {
+      setSelectedLabels(new Set(['total', 'opened', 'closed']));
+      initializedRef.current = true;
+    }
+  }, [data.opened, data.closed]);
 
   const itemName = itemType === 'pr' ? 'PR' : 'issue';
   const itemNamePlural = itemType === 'pr' ? 'PRs' : 'issues';
