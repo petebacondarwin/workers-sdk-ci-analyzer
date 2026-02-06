@@ -4,6 +4,8 @@ export interface IssueLabelStatsData {
   timestamps: number[];
   total: number[];
   labels: Record<string, number[]>;
+  opened?: number[];
+  closed?: number[];
 }
 
 interface IssueLabelStatsResponse extends IssueLabelStatsData {
@@ -49,7 +51,9 @@ export function useIssueLabelStats(dateRange?: { start: string; end: string }) {
       setData({
         timestamps: result.timestamps || [],
         total: result.total || [],
-        labels: result.labels || {}
+        labels: result.labels || {},
+        opened: result.opened,
+        closed: result.closed
       });
     } catch (err) {
       console.error('Error loading issue label stats:', err);
