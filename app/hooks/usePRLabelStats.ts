@@ -4,6 +4,8 @@ export interface PRLabelStatsData {
   timestamps: number[];
   total: number[];
   labels: Record<string, number[]>;
+  opened?: number[];
+  closed?: number[];
 }
 
 interface PRLabelStatsResponse extends PRLabelStatsData {
@@ -49,7 +51,9 @@ export function usePRLabelStats(dateRange?: { start: string; end: string }) {
       setData({
         timestamps: result.timestamps || [],
         total: result.total || [],
-        labels: result.labels || {}
+        labels: result.labels || {},
+        opened: result.opened,
+        closed: result.closed
       });
     } catch (err) {
       console.error('Error loading PR label stats:', err);

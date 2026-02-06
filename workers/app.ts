@@ -2207,9 +2207,11 @@ function calculateDailyLabelCounts(
   issues: GitHubItem[],
   startDate: Date,
   endDate: Date
-): { timestamps: number[]; total: number[]; labels: Record<string, number[]> } {
+): { timestamps: number[]; total: number[]; labels: Record<string, number[]>; opened: number[]; closed: number[] } {
   const timestamps: number[] = [];
   const total: number[] = [];
+  const opened: number[] = [];
+  const closed: number[] = [];
   const labels: Record<string, number[]> = {};
   
   // Collect all unique labels from issues
@@ -2235,6 +2237,8 @@ function calculateDailyLabelCounts(
   
   while (currentDate <= endDate) {
     const dayEnd = new Date(currentDate);
+    const dayStart = new Date(currentDate);
+    dayStart.setHours(0, 0, 0, 0); // Start of day
     const timestamp = Math.floor(dayEnd.getTime() / 1000);
     const isToday = dayEnd.toDateString() === today.toDateString();
     
@@ -2242,6 +2246,8 @@ function calculateDailyLabelCounts(
     
     // Count issues that were open on this day and track by label
     let openCount = 0;
+    let openedToday = 0;
+    let closedToday = 0;
     const labelCounts: Record<string, number> = {};
     
     // Initialize label counts for this day
@@ -2252,6 +2258,16 @@ function calculateDailyLabelCounts(
     for (const issue of issues) {
       const createdAt = new Date(issue.createdAt);
       const closedAt = issue.closedAt ? new Date(issue.closedAt) : null;
+      
+      // Count items opened on this day
+      if (createdAt >= dayStart && createdAt <= dayEnd) {
+        openedToday++;
+      }
+      
+      // Count items closed on this day
+      if (closedAt && closedAt >= dayStart && closedAt <= dayEnd) {
+        closedToday++;
+      }
       
       // Issue must have been created by end of this day
       if (createdAt <= dayEnd) {
@@ -2278,6 +2294,8 @@ function calculateDailyLabelCounts(
     }
     
     total.push(openCount);
+    opened.push(openedToday);
+    closed.push(closedToday);
     
     // Add label counts to the arrays
     for (const label of allLabels) {
@@ -2288,7 +2306,7 @@ function calculateDailyLabelCounts(
     currentDate.setDate(currentDate.getDate() + 1);
   }
   
-  return { timestamps, total, labels };
+  return { timestamps, total, labels, opened, closed };
 }
 
 // ============================================================================

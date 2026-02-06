@@ -32,6 +32,8 @@ interface LabelChartProps {
     timestamps: number[];
     total: number[];
     labels: Record<string, number[]>;
+    opened?: number[];
+    closed?: number[];
   };
   loading?: boolean;
   error?: string | null;
@@ -59,8 +61,13 @@ export default function LabelChart({ data, loading, error, itemType = 'issue' }:
   const itemNamePlural = itemType === 'pr' ? 'PRs' : 'issues';
 
   const allLabels = useMemo(() => {
-    return ['total', ...Object.keys(data.labels).sort()];
-  }, [data.labels]);
+    const baseLabels = ['total'];
+    // Add opened/closed options for PRs if data is available
+    if (data.opened && data.closed) {
+      baseLabels.push('opened', 'closed');
+    }
+    return [...baseLabels, ...Object.keys(data.labels).sort()];
+  }, [data.labels, data.opened, data.closed]);
 
   // Calculate stats for the total
   const stats = useMemo(() => {
@@ -108,13 +115,45 @@ export default function LabelChart({ data, loading, error, itemType = 'issue' }:
     // Add total line if selected
     if (selectedLabels.has('total')) {
       datasets.push({
-        label: 'Total',
+        label: 'Total Open',
         data: data.timestamps.map((ts, i) => ({
           x: ts * 1000, // Convert to milliseconds
           y: data.total[i]
         })),
         borderColor: '#ffffff',
         backgroundColor: 'rgba(255, 255, 255, 0.1)',
+        borderWidth: 2,
+        pointRadius: 2,
+        tension: 0.1,
+      });
+    }
+
+    // Add opened line if selected and data available
+    if (selectedLabels.has('opened') && data.opened) {
+      datasets.push({
+        label: 'Opened',
+        data: data.timestamps.map((ts, i) => ({
+          x: ts * 1000,
+          y: data.opened![i]
+        })),
+        borderColor: '#22c55e', // green
+        backgroundColor: 'rgba(34, 197, 94, 0.1)',
+        borderWidth: 2,
+        pointRadius: 2,
+        tension: 0.1,
+      });
+    }
+
+    // Add closed line if selected and data available
+    if (selectedLabels.has('closed') && data.closed) {
+      datasets.push({
+        label: 'Closed',
+        data: data.timestamps.map((ts, i) => ({
+          x: ts * 1000,
+          y: data.closed![i]
+        })),
+        borderColor: '#ef4444', // red
+        backgroundColor: 'rgba(239, 68, 68, 0.1)',
         borderWidth: 2,
         pointRadius: 2,
         tension: 0.1,
@@ -372,7 +411,24 @@ export default function LabelChart({ data, loading, error, itemType = 'issue' }:
           <div className="label-list">
             {filteredLabels.map((label, index) => {
               const isSelected = selectedLabels.has(label);
-              const color = label === 'total' ? '#ffffff' : COLORS[(index - 1) % COLORS.length];
+              // Determine color based on special labels
+              let color: string;
+              let displayName: string;
+              if (label === 'total') {
+                color = '#ffffff';
+                displayName = 'Total Open';
+              } else if (label === 'opened') {
+                color = '#22c55e'; // green
+                displayName = 'Opened';
+              } else if (label === 'closed') {
+                color = '#ef4444'; // red
+                displayName = 'Closed';
+              } else {
+                // For regular labels, offset the index to account for special labels
+                const specialLabelsCount = (data.opened && data.closed) ? 3 : 1;
+                color = COLORS[(index - specialLabelsCount) % COLORS.length];
+                displayName = label;
+              }
               return (
                 <label
                   key={label}
@@ -388,7 +444,7 @@ export default function LabelChart({ data, loading, error, itemType = 'issue' }:
                     style={{ backgroundColor: color }}
                   ></span>
                   <span className="label-name" title={label}>
-                    {label === 'total' ? 'Total' : label}
+                    {displayName}
                   </span>
                 </label>
               );
