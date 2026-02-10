@@ -13,7 +13,10 @@ interface PRLabelStatsResponse extends PRLabelStatsData {
   error?: string;
 }
 
-export function usePRLabelStats(dateRange?: { start: string; end: string }) {
+export function usePRLabelStats(
+  dateRange?: { start: string; end: string },
+  excludeDrafts: boolean = true
+) {
   const [data, setData] = useState<PRLabelStatsData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -32,6 +35,7 @@ export function usePRLabelStats(dateRange?: { start: string; end: string }) {
       if (dateRange?.end) {
         params.set('end', dateRange.end);
       }
+      params.set('excludeDrafts', String(excludeDrafts));
       
       if (params.toString()) {
         url += '?' + params.toString();
@@ -61,7 +65,7 @@ export function usePRLabelStats(dateRange?: { start: string; end: string }) {
     } finally {
       setLoading(false);
     }
-  }, [dateRange?.start, dateRange?.end]);
+  }, [dateRange?.start, dateRange?.end, excludeDrafts]);
 
   useEffect(() => {
     fetchData();

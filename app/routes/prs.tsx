@@ -36,15 +36,22 @@ export default function PullRequests() {
     };
   });
 
-  const { data, loading, error, refetch } = usePRLabelStats(dateRange);
+  // Initialize excludeDrafts from URL params, default to true
+  const [excludeDrafts, setExcludeDrafts] = useState<boolean>(() => {
+    const param = searchParams.get('excludeDrafts');
+    return param !== 'false'; // Default: true (exclude drafts)
+  });
 
-  // Update URL when date range changes
+  const { data, loading, error, refetch } = usePRLabelStats(dateRange, excludeDrafts);
+
+  // Update URL when date range or excludeDrafts changes
   useEffect(() => {
     const newParams = new URLSearchParams(searchParams);
     newParams.set('start', dateRange.start);
     newParams.set('end', dateRange.end);
+    newParams.set('excludeDrafts', String(excludeDrafts));
     setSearchParams(newParams, { replace: true });
-  }, [dateRange, searchParams, setSearchParams]);
+  }, [dateRange, excludeDrafts, searchParams, setSearchParams]);
 
   const handleDateRangeChange = (start: string, end: string) => {
     setDateRange({ start, end });
@@ -115,6 +122,17 @@ export default function PullRequests() {
         dateRange={dateRange}
         onDateRangeChange={handleDateRangeChange}
       />
+
+      <div className="filter-options">
+        <label className="filter-checkbox">
+          <input
+            type="checkbox"
+            checked={excludeDrafts}
+            onChange={(e) => setExcludeDrafts(e.target.checked)}
+          />
+          Hide draft PRs
+        </label>
+      </div>
 
       <LabelChart
         data={data || { timestamps: [], total: [], labels: {} }}

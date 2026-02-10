@@ -2313,13 +2313,14 @@ function calculateDailyLabelCounts(
 // PR Label Statistics
 // ============================================================================
 
-// Handle PR label stats API: GET /api/pr-label-stats?start=<date>&end=<date>
+// Handle PR label stats API: GET /api/pr-label-stats?start=<date>&end=<date>&excludeDrafts=true|false
 // Computes historical PR counts by label from the synced GitHub items
 async function handlePRLabelStats(request: Request, env: Env): Promise<Response> {
   try {
     const url = new URL(request.url);
     const startParam = url.searchParams.get('start');
     const endParam = url.searchParams.get('end');
+    const excludeDrafts = url.searchParams.get('excludeDrafts') !== 'false'; // Default: true
     
     // Load all GitHub items from KV
     const items = await loadGitHubItemsFromKV(env);
@@ -2341,8 +2342,10 @@ async function handlePRLabelStats(request: Request, env: Env): Promise<Response>
       });
     }
     
-    // Filter to only PRs (not issues)
-    const prs = Object.values(items).filter(item => item.type === 'pr');
+    // Filter to only PRs (not issues), optionally excluding drafts
+    const prs = Object.values(items).filter(item => 
+      item.type === 'pr' && (!excludeDrafts || !item.isDraft)
+    );
     
     // Determine date range
     const endDate = endParam ? new Date(endParam) : new Date();
