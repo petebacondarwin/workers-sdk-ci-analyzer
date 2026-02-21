@@ -16,4 +16,8 @@ include:
       runOnBranches: "^main$"
       CLOUDFLARE_API_TOKEN: $CLOUDFLARE_API_TOKEN
 
+  - component: $CI_SERVER_FQDN/cloudflare/ci/ai/opencode@~latest
+    inputs:
+      runOnMR: true
+
 stages: [deploy]
