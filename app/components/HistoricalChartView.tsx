@@ -25,6 +25,11 @@ ChartJS.register(
 interface HistoricalSnapshot {
   timestamp: string;
   date: string;
+  runStats?: {
+    totalRuns: number;
+    failedRuns: number;
+    runFailureRate: number;
+  };
   jobs: Record<string, {
     failureRate: number;
     failures: number;
@@ -43,7 +48,7 @@ export default function HistoricalChartView({ dateRange }: HistoricalChartViewPr
   const [selectedJobs, setSelectedJobs] = useState<Set<string>>(new Set());
   const [filterExpanded, setFilterExpanded] = useState(false);
   const [initialized, setInitialized] = useState(false);
-  const [viewMode, setViewMode] = useState<'individual' | 'total'>('individual');
+  const [viewMode, setViewMode] = useState<'individual' | 'total' | 'runFailureRate'>('individual');
 
   useEffect(() => {
     async function fetchHistory() {
@@ -184,6 +189,34 @@ export default function HistoricalChartView({ dateRange }: HistoricalChartViewPr
     };
   };
 
+  // Calculate run failure rate dataset (% of workflow runs with at least one failure)
+  const calculateRunFailureRateDataset = (dateLabels: string[]) => {
+    const data = dateLabels.map(date => {
+      const snapshot = snapshotsByDate.get(date);
+      if (!snapshot || !snapshot.runStats) return null;
+      return snapshot.runStats.runFailureRate;
+    });
+
+    const runStatsData = dateLabels.map(date => {
+      const snapshot = snapshotsByDate.get(date);
+      if (!snapshot || !snapshot.runStats) return null;
+      return snapshot.runStats;
+    });
+
+    return {
+      label: 'Run Failure Rate',
+      data,
+      borderColor: 'rgb(249, 115, 22)',
+      backgroundColor: 'rgba(249, 115, 22, 0.1)',
+      borderWidth: 3,
+      tension: 0.3,
+      spanGaps: true,
+      pointRadius: 4,
+      pointHoverRadius: 7,
+      runStatsData
+    };
+  };
+
   // Prepare chart data with all dates in range
   const labels = generateDateRange(dateRange.start, dateRange.end);
   
@@ -204,6 +237,8 @@ export default function HistoricalChartView({ dateRange }: HistoricalChartViewPr
 
   const datasets = viewMode === 'total' 
     ? [calculateTotalFlakesDataset(labels)]
+    : viewMode === 'runFailureRate'
+    ? [calculateRunFailureRateDataset(labels)]
     : filteredJobNames.map((jobName, index) => {
         const data = labels.map(date => {
           const snapshot = snapshotsByDate.get(date);
@@ -230,11 +265,11 @@ export default function HistoricalChartView({ dateRange }: HistoricalChartViewPr
     datasets
   };
 
-  // Calculate max value for y-axis in total view mode
+  // Calculate max value for y-axis in total/runFailureRate view modes
   let yAxisMax: number | undefined = 100;
-  if (viewMode === 'total' && datasets.length > 0) {
-    const totalDataset = datasets[0];
-    const validValues = totalDataset.data.filter((v): v is number => v !== null);
+  if ((viewMode === 'total' || viewMode === 'runFailureRate') && datasets.length > 0) {
+    const dataset = datasets[0];
+    const validValues = dataset.data.filter((v): v is number => v !== null);
     if (validValues.length > 0) {
       const maxValue = Math.max(...validValues);
       // Add 10% padding and round up to nearest 5
@@ -256,7 +291,7 @@ export default function HistoricalChartView({ dateRange }: HistoricalChartViewPr
       },
       title: {
         display: true,
-        text: 'Failure Rate Over Time',
+        text: viewMode === 'runFailureRate' ? 'Run Failure Rate Over Time' : 'Job Failure Rate Over Time',
         color: '#ffffff',
         font: {
           size: 18,
@@ -287,6 +322,19 @@ export default function HistoricalChartView({ dateRange }: HistoricalChartViewPr
                   return [
                     `${jobName}: ${value}`,
                     `  Failures: ${rawData.failures}/${total} runs`
+                  ];
+                }
+              }
+            }
+            // Show breakdown for run failure rate view
+            if (jobName === 'Run Failure Rate') {
+              const dataset = context.dataset as typeof context.dataset & { runStatsData?: Array<{ totalRuns: number; failedRuns: number; runFailureRate: number } | null> };
+              if (dataset.runStatsData) {
+                const rawData = dataset.runStatsData[context.dataIndex];
+                if (rawData) {
+                  return [
+                    `${jobName}: ${value}`,
+                    `  ${rawData.failedRuns} of ${rawData.totalRuns} runs failed`
                   ];
                 }
               }
@@ -381,9 +429,19 @@ export default function HistoricalChartView({ dateRange }: HistoricalChartViewPr
           />
           Total (All Jobs)
         </label>
+        <label className="view-mode-option">
+          <input
+            type="radio"
+            name="viewMode"
+            value="runFailureRate"
+            checked={viewMode === 'runFailureRate'}
+            onChange={() => setViewMode('runFailureRate')}
+          />
+          Run Failure Rate
+        </label>
       </div>
 
-      {viewMode === 'individual' && (
+      {viewMode === 'individual' && sortedJobNames.length > 0 && (
         <div className="job-filter-section">
           <button 
             className="filter-toggle"
@@ -430,7 +488,9 @@ export default function HistoricalChartView({ dateRange }: HistoricalChartViewPr
           Showing {labels.length} date{labels.length !== 1 ? 's' : ''} from{' '}
           {dateRange.start} to {dateRange.end} ({snapshots.length} with data)
         </p>
-        {viewMode === 'total' ? (
+        {viewMode === 'runFailureRate' ? (
+          <p>Displaying % of workflow runs with at least one failing job</p>
+        ) : viewMode === 'total' ? (
           <p>Displaying total flakes across all {sortedJobNames.length} jobs</p>
         ) : (
           <p>Displaying {filteredJobNames.length} of {sortedJobNames.length} jobs</p>
