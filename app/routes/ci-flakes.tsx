@@ -93,15 +93,26 @@ export default function CIFlakes() {
             const totalSuccesses = jobs.reduce((sum, job: any) => sum + job.successes, 0);
             const totalRuns = totalFailures + totalSuccesses;
             const overallFailureRate = totalRuns > 0 ? (totalFailures / totalRuns) * 100 : 0;
+            const runStats = data.runStats;
 
             return (
               <>
                 <span className={`overall-rate ${overallFailureRate === 0 ? 'success' : overallFailureRate < 5 ? 'warning' : 'danger'}`}>
-                  {overallFailureRate.toFixed(1)}% failure rate
+                  {overallFailureRate.toFixed(1)}% job failure rate
                 </span>
+                {runStats && (
+                  <span className={`overall-rate ${runStats.runFailureRate === 0 ? 'success' : runStats.runFailureRate < 20 ? 'warning' : 'danger'}`}>
+                    {runStats.runFailureRate.toFixed(1)}% of runs failed
+                  </span>
+                )}
                 <span className="overall-detail">
-                  {totalFailures} failures / {totalSuccesses} successes / {totalRuns} total runs across {jobs.length} job types
+                  {totalFailures} failures / {totalSuccesses} successes / {totalRuns} total job runs across {jobs.length} job types
                 </span>
+                {runStats && (
+                  <span className="overall-detail">
+                    {runStats.failedRuns} of {runStats.totalRuns} workflow runs had at least one failing job
+                  </span>
+                )}
               </>
             );
           })()}

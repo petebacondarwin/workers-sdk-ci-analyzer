@@ -34,6 +34,12 @@ interface JobStats {
   instances: JobInstance[];
 }
 
+interface RunStats {
+  totalRuns: number;
+  failedRuns: number;
+  runFailureRate: number;
+}
+
 interface CIData {
   jobStats: Record<string, JobStats>;
   jobHistory: Array<{
@@ -44,6 +50,7 @@ interface CIData {
   }>;
   lastUpdated: string;
   totalRuns: number;
+  runStats?: RunStats;
 }
 
 export function useCIData(limit = 50, dateRange?: { start: string; end: string }) {

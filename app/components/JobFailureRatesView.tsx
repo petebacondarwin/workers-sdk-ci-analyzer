@@ -28,9 +28,16 @@ interface JobStats {
   instances: JobInstance[];
 }
 
+interface RunStats {
+  totalRuns: number;
+  failedRuns: number;
+  runFailureRate: number;
+}
+
 interface JobFailureRatesViewProps {
   data: {
     jobStats: Record<string, JobStats>;
+    runStats?: RunStats;
   } | null;
   loading: boolean;
 }
@@ -159,13 +166,24 @@ export default function JobFailureRatesView({ data, loading }: JobFailureRatesVi
 
       <div className="aggregate-stats">
         <div className="stat-card">
-          <span className="stat-label">Overall Failure Rate</span>
+          <span className="stat-label">Job Failure Rate</span>
           <span className={`stat-value ${getStatusClass(overallFailureRate)}`}>
             {formatPercent(overallFailureRate)}
           </span>
         </div>
+        {data.runStats && (
+          <div className="stat-card">
+            <span className="stat-label">Run Failure Rate</span>
+            <span className={`stat-value ${getStatusClass(data.runStats.runFailureRate)}`}>
+              {formatPercent(data.runStats.runFailureRate)}
+            </span>
+            <span className="stat-detail">
+              {data.runStats.failedRuns} of {data.runStats.totalRuns} runs
+            </span>
+          </div>
+        )}
         <div className="stat-card">
-          <span className="stat-label">Total Runs</span>
+          <span className="stat-label">Total Job Runs</span>
           <span className="stat-value">{aggregateStats.totalRuns.toLocaleString()}</span>
         </div>
         <div className="stat-card">

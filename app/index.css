@@ -445,6 +445,11 @@ footer p {
   color: var(--success-color);
 }
 
+.aggregate-stats .stat-detail {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
 .jobs-table-container {
   overflow-x: auto;
   background-color: var(--surface-color);

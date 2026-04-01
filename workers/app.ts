@@ -152,6 +152,9 @@ async function fetchAndStoreCIData(env: Env, limit: number = 100): Promise<any> 
     lastUpdated: new Date().toISOString(),
     totalRuns: runs.length
   };
+
+  // Track run-level outcomes: did each workflow run have any job failure?
+  const runOutcomes: Map<number, { hadFailure: boolean; hadNonCancelledJob: boolean }> = new Map();
   
   // Calculate 7-day window
   const sevenDaysAgo = new Date();
@@ -192,6 +195,16 @@ async function fetchAndStoreCIData(env: Env, limit: number = 100): Promise<any> 
           }
           
           const jobName = job.name;
+
+          // Track run-level outcome: mark this run as having a non-cancelled job
+          if (!runOutcomes.has(run.id)) {
+            runOutcomes.set(run.id, { hadFailure: false, hadNonCancelledJob: false });
+          }
+          const runOutcome = runOutcomes.get(run.id)!;
+          runOutcome.hadNonCancelledJob = true;
+          if (job.conclusion === 'failure') {
+            runOutcome.hadFailure = true;
+          }
           
           // Initialize job stats if not exists
           if (!processedData.jobStats[jobName]) {
@@ -281,6 +294,15 @@ async function fetchAndStoreCIData(env: Env, limit: number = 100): Promise<any> 
       new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
     );
   }
+
+  // Calculate run-level failure rate (% of workflow runs with at least one job failure)
+  const runsWithJobs = Array.from(runOutcomes.values()).filter(r => r.hadNonCancelledJob);
+  const failedRuns = runsWithJobs.filter(r => r.hadFailure).length;
+  processedData.runStats = {
+    totalRuns: runsWithJobs.length,
+    failedRuns: failedRuns,
+    runFailureRate: runsWithJobs.length > 0 ? (failedRuns / runsWithJobs.length) * 100 : 0
+  };
   
   // Store daily snapshot using date as key (YYYY-MM-DD)
   const now = new Date();
@@ -291,6 +313,7 @@ async function fetchAndStoreCIData(env: Env, limit: number = 100): Promise<any> 
   const dailySnapshot: any = {
     date: dateKey,
     timestamp: now.toISOString(),
+    runStats: processedData.runStats,
     jobs: {} as Record<string, { 
       failureRate: number; 
       failures: number; 
@@ -527,11 +550,28 @@ async function handleDateRangeQuery(env: Env, startDate: Date, endDate: Date) {
     };
   }
   
+  // Calculate run-level failure rate from deduplicated instances across all jobs
+  const runOutcomesMap = new Map<number, boolean>(); // runId -> hadFailure
+  for (const jobName in jobStats) {
+    for (const inst of jobStats[jobName].instances) {
+      const hadFailureBefore = runOutcomesMap.get(inst.runId) ?? false;
+      runOutcomesMap.set(inst.runId, hadFailureBefore || inst.conclusion === 'failure');
+    }
+  }
+  const totalRunsTracked = runOutcomesMap.size;
+  const failedRunCount = Array.from(runOutcomesMap.values()).filter(Boolean).length;
+  const runStats = {
+    totalRuns: totalRunsTracked,
+    failedRuns: failedRunCount,
+    runFailureRate: totalRunsTracked > 0 ? (failedRunCount / totalRunsTracked) * 100 : 0
+  };
+
   return new Response(JSON.stringify({
     jobStats: jobStats,
     jobHistory: [],
     lastUpdated: new Date().toISOString(),
     totalRuns: filteredDates.length,
+    runStats: runStats,
     dateRange: { start: startDate.toISOString(), end: endDate.toISOString() }
   }), {
     headers: {
