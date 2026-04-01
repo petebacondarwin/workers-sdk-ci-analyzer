@@ -929,6 +929,8 @@ async function backfillHistoricalData(env: Env, startDate: Date, endDate: Date) 
     
     // Process the data similar to fetchAndStoreCIData
     const jobStats: any = {};
+    // Track run-level outcomes for runStats computation
+    const runOutcomes: Map<number, { hadFailure: boolean; hadNonCancelledJob: boolean }> = new Map();
     
     // Fetch jobs in parallel batches of 8 for better performance
     const batchSize = 8;
@@ -959,6 +961,16 @@ async function backfillHistoricalData(env: Env, startDate: Date, endDate: Date) 
         for (const job of jobs) {
           if (job.conclusion === 'cancelled' || job.conclusion === 'skipped') continue;
           
+          // Track run-level outcome
+          if (!runOutcomes.has(run.id)) {
+            runOutcomes.set(run.id, { hadFailure: false, hadNonCancelledJob: false });
+          }
+          const runOutcome = runOutcomes.get(run.id)!;
+          runOutcome.hadNonCancelledJob = true;
+          if (job.conclusion === 'failure') {
+            runOutcome.hadFailure = true;
+          }
+
           const jobName = job.name;
           if (!jobStats[jobName]) {
             jobStats[jobName] = { 
@@ -998,10 +1010,19 @@ async function backfillHistoricalData(env: Env, startDate: Date, endDate: Date) 
       }
     }
     
+    // Calculate run-level failure rate
+    const runsWithJobs = Array.from(runOutcomes.values()).filter(r => r.hadNonCancelledJob);
+    const failedRuns = runsWithJobs.filter(r => r.hadFailure).length;
+
     // Calculate failure rates and store snapshot
     const snapshot: any = {
       timestamp: currentDate.toISOString(),
       date: dateStr,
+      runStats: {
+        totalRuns: runsWithJobs.length,
+        failedRuns: failedRuns,
+        runFailureRate: runsWithJobs.length > 0 ? (failedRuns / runsWithJobs.length) * 100 : 0
+      },
       jobs: {}
     };
     
